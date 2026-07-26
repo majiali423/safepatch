@@ -1,0 +1,1 @@
+divide 函数在除数为 0 时应该抛出 ValueError，但现在抛出了 ZeroDivisionError，请修复。

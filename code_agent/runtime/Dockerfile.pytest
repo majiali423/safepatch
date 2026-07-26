@@ -1,0 +1,7 @@
+FROM python:3.12-slim
+
+RUN useradd -m -u 1000 agent \
+    && pip install --no-cache-dir pytest==8.3.5
+
+USER agent
+WORKDIR /work

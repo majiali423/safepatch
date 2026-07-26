@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "code-agent"
+version = "0.2.0"
+description = "A small-Python-repo code repair agent with Docker pytest and human approval"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "openai>=1.40.0",
+  "rich>=13.7.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0.0"]
+
+[project.scripts]
+code-agent = "code_agent.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["code_agent*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+  "integration: tests that require a working Docker pytest runtime",
+  "docker_e2e: real Docker negative/security E2E (serial; skips if daemon unavailable)",
+]

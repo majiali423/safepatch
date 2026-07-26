@@ -1,0 +1,33 @@
+[
+  {
+    "tool": "get_repo_map",
+    "args": {}
+  },
+  {
+    "tool": "read_file",
+    "args": {
+      "path": "calculator.py",
+      "start_line": 1,
+      "end_line": 40
+    }
+  },
+  {
+    "tool": "read_file",
+    "args": {
+      "path": "tests/test_calculator.py",
+      "start_line": 1,
+      "end_line": 40
+    }
+  },
+  {
+    "tool": "propose_patch",
+    "args": {
+      "diagnosis": "divide 在除数为 0 时直接触发 ZeroDivisionError，未转换为业务要求的 ValueError",
+      "affected_files": ["calculator.py"],
+      "unified_diff": "--- a/calculator.py\n+++ b/calculator.py\n@@ -5,6 +5,8 @@\n def divide(a: float, b: float) -> float:\n     \"\"\"Divide a by b.\n \n     Should raise ValueError when b is 0.\n     \"\"\"\n+    if b == 0:\n+        raise ValueError(\"division by zero\")\n     return a / b\n",
+      "expected_behavior": "除数为零时抛出 ValueError",
+      "risk_notes": "仅影响 divide 的零除路径，不影响正常除法",
+      "tests_to_run": ["tests/test_calculator.py"]
+    }
+  }
+]

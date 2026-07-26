@@ -1,0 +1,29 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+
+# Secrets and local env
+.env
+.env.*
+!.env.example
+
+# Agent / eval runtime artifacts (never commit)
+.code_agent_sessions/
+examples/eval_tasks/results/
+examples/eval_tasks/**/latest/
+
+# Caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+**/__pycache__/
+**/.pytest_cache/
+
+*.log
+.DS_Store
+Thumbs.db

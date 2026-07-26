@@ -1,0 +1,65 @@
+from __future__ import annotations
+
+from code_agent.runtime.docker_config import DockerRunConfig
+from code_agent.runtime.docker_pytest import DockerPytestRunner
+
+
+def test_docker_run_config_to_dict_and_cmd_are_same_source():
+    cfg = DockerRunConfig(image="code-agent-pytest:local")
+    payload = cfg.to_dict()
+    assert payload == {
+        "image": "code-agent-pytest:local",
+        "network_mode": "none",
+        "memory": "512m",
+        "cpus": 1,
+        "pids_limit": 128,
+        "user": "1000:1000",
+        "timeout_seconds": 120,
+        "remove_container": True,
+        "container_name": None,
+        "pytest_argv": [
+            "python",
+            "-m",
+            "pytest",
+            "-q",
+            "-p",
+            "no:cacheprovider",
+        ],
+    }
+    cmd = cfg.build_docker_cmd(r"C:\work\copy")
+    assert cmd[0:3] == ["docker", "run", "--rm"]
+    assert "--network" in cmd and cmd[cmd.index("--network") + 1] == "none"
+    assert "--memory" in cmd and cmd[cmd.index("--memory") + 1] == "512m"
+    assert "--cpus" in cmd and cmd[cmd.index("--cpus") + 1] == "1"
+    assert "--pids-limit" in cmd and cmd[cmd.index("--pids-limit") + 1] == "128"
+    assert "--user" in cmd and cmd[cmd.index("--user") + 1] == "1000:1000"
+    assert "--name" not in cmd
+    assert cmd[-6:] == list(payload["pytest_argv"])
+    assert "code-agent-pytest:local" in cmd
+    # Must not embed secrets / env dumps.
+    joined = " ".join(cmd)
+    assert "OPENAI" not in joined
+    assert "API_KEY" not in joined
+
+
+def test_container_name_appears_in_cmd_and_to_dict():
+    cfg = DockerRunConfig(
+        image="code-agent-pytest:local",
+        container_name="code-agent-test-abc123",
+        timeout_seconds=2,
+    )
+    payload = cfg.to_dict()
+    cmd = cfg.build_docker_cmd("/work/copy")
+    assert payload["container_name"] == "code-agent-test-abc123"
+    assert payload["timeout_seconds"] == 2
+    assert "--name" in cmd and cmd[cmd.index("--name") + 1] == "code-agent-test-abc123"
+
+
+def test_runner_make_run_config_matches_build_cmd():
+    runner = DockerPytestRunner()
+    cfg = runner.make_run_config("code-agent-pytest:local")
+    assert cfg.to_dict()["image"] == "code-agent-pytest:local"
+    cmd = cfg.build_docker_cmd("/work/copy")
+    assert cfg.image in cmd
+    assert cfg.timeout_seconds == 120
+    assert cfg.container_name is None

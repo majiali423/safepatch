@@ -1,0 +1,17 @@
+[
+  {
+    "tool": "read_file",
+    "args": {"path": "calculator.py", "start_line": 1, "end_line": 40}
+  },
+  {
+    "tool": "propose_patch",
+    "args": {
+      "diagnosis": "divide raises ZeroDivisionError instead of ValueError when b == 0",
+      "affected_files": ["calculator.py"],
+      "unified_diff": "--- a/calculator.py\n+++ b/calculator.py\n@@ -4,4 +4,6 @@\n \n def divide(a: float, b: float) -> float:\n     \"\"\"Return a / b. Must raise ValueError when b == 0.\"\"\"\n+    if b == 0:\n+        raise ValueError(\"division by zero\")\n     return a / b\n",
+      "expected_behavior": "divide(x, 0) raises ValueError",
+      "risk_notes": "low",
+      "tests_to_run": ["tests/test_calculator.py"]
+    }
+  }
+]
