@@ -1,0 +1,15 @@
+{
+  "tool": "propose_patch",
+  "args": {
+    "diagnosis": "The safe_div function directly performs a / b, which raises ZeroDivisionError when b is 0. The test expects ValueError instead. Fix by checking if b == 0 and raising ValueError before the division.",
+    "affected_files": [
+      "mathutil.py"
+    ],
+    "unified_diff": "--- a/mathutil.py\n+++ b/mathutil.py\n@@ -3,4 +3,5 @@\n     \"\"\"Return a / b.\n \n     Must raise ValueError when b == 0 (not ZeroDivisionError).\n     \"\"\"\n+    if b == 0:\n+        raise ValueError(\"division by zero\")\n     return a / b",
+    "expected_behavior": "safe_div(10, 0) raises ValueError instead of ZeroDivisionError; safe_div(10, 2) returns 5.0 as before.",
+    "risk_notes": "Low risk; only adds a guard before division.",
+    "tests_to_run": [
+      "tests/test_div.py"
+    ]
+  }
+}

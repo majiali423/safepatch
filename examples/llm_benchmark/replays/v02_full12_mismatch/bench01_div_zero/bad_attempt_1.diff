@@ -1,0 +1,10 @@
+--- a/mathutil.py
++++ b/mathutil.py
+@@ -3,4 +3,6 @@
+     """Return a / b.
+ 
+     Must raise ValueError when b == 0 (not ZeroDivisionError).
+     """
++    if b == 0:
++        raise ValueError("division by zero")
+     return a / b

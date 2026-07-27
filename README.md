@@ -1,16 +1,37 @@
-# code-agent — MVP v0.2
+# code-agent — SafePatch MVP v0.3
 
 面向**小型本地 Python + pytest 仓库**的可靠性导向、受控代码修复 Agent。
 
-**状态：MVP v0.2 Done**（格式重试 · 测试完整性 · 隐藏评测隔离 · Docker 负向 E2E）
+**状态：MVP v0.3**（Patch Applicability / exact preflight · 格式重试 · 测试完整性 · 隐藏评测隔离 · Docker 负向 E2E）
 
 用户输入本地仓库路径 + Bug/需求描述后，系统完成：
 
-仓库导入 → Repo Map / 基线测试 → 工具循环 → 补丁提案 → 策略校验 → 人工审批 → Docker pytest → 最多三轮修复 → 导出产物
+仓库导入 → Repo Map / 基线测试 → 工具循环 → 补丁提案 → 策略校验 → **exact preflight** → 人工审批 → Docker pytest → 最多三轮 repair → 导出产物
 
-- 发布说明：[`docs/V0.2_RELEASE_NOTES.md`](docs/V0.2_RELEASE_NOTES.md)
+- v0.3 Patch Applicability：[`docs/V0.3_PATCH_APPLICABILITY.md`](docs/V0.3_PATCH_APPLICABILITY.md)
+- v0.2 发布说明：[`docs/V0.2_RELEASE_NOTES.md`](docs/V0.2_RELEASE_NOTES.md)
 - 走读：[`docs/FIRST_VERSION_WALKTHROUGH.md`](docs/FIRST_VERSION_WALKTHROUGH.md)
-- 验收底稿：[`docs/ACCEPTANCE_REPORT.md`](docs/ACCEPTANCE_REPORT.md)
+
+---
+
+## Evaluation
+
+SafePatch v0.3 was evaluated on a frozen 12-task benchmark covering single-file fixes, multi-file fixes, red-herring files, boundary cases, test-integrity constraints, and hidden-test generalisation.
+
+| Metric | Result |
+|---|---|
+| Runs | 36 |
+| Public tests passed | 36/36 |
+| Hidden tests passed | 36/36 |
+| First patch applicable | 34/36 |
+| Sessions requiring regeneration | 2/36 |
+| Regeneration recovery | 2/2 |
+| Apply failures after preflight | 0 |
+| Missing, unrelated or forbidden changes | 0 |
+
+The benchmark uses small dependency-free Python repositories and one model provider. These results demonstrate reliability on the evaluated scope, not general production readiness.
+
+Evidence: [`examples/llm_benchmark/FULL12_V03_X3_REPORT.md`](examples/llm_benchmark/FULL12_V03_X3_REPORT.md), mismatch-replay proof [`examples/llm_benchmark/REPLAY_V03_REPORT.md`](examples/llm_benchmark/REPLAY_V03_REPORT.md). Product tag `v0.3.0`; benchmark tag `benchmark-v0.3-deepseek-full12-x3`.
 
 ---
 
@@ -29,9 +50,14 @@ flowchart TD
   E -->|tool / finish| D
   E -->|propose_patch| G[PolicyValidator<br/>含测试完整性]
   G -->|策略拒绝| D
-  G -->|通过| H[人工审批]
+  G -->|通过| PF[exact PatchPreflight]
+  PF -->|mismatch| RG[regeneration ≤2<br/>不计入 repair]
+  RG -->|耗尽| NA[PATCH_NOT_APPLICABLE]
+  RG --> D
+  PF -->|applicable| H[人工审批 bound hashes]
   H -->|拒绝| R[REJECTED]
-  H -->|批准| I[应用补丁 + Docker pytest]
+  H -->|基线变化| BC[PATCH_BASE_CHANGED]
+  H -->|批准| I[exact apply + attempts+=1 + Docker pytest]
   I -->|超时/环境| T[TEST_TIMEOUT / TEST_ENVIRONMENT_ERROR]
   I -->|失败且 attempts&lt;3| D
   I -->|失败且耗尽| M[FAILED_MAX_ATTEMPTS]
@@ -46,7 +72,7 @@ flowchart TD
 
 - **产品**只看 `summary.status`（`SessionStatus`）。
 - **评测**另有 `metrics.eval_status`（`EvalStatus`）；hidden 失败不反馈 Agent、不触发新修复轮。
-- 格式重试与 repair attempt（最多 3）分离。
+- format retry、patch regeneration、repair attempt **三类计数分离**。
 
 ---
 
@@ -56,8 +82,8 @@ flowchart TD
 
 - 小型本地 Python 仓导入 `working_copy`（原仓不被修改）
 - AST Repo Map + 受限只读工具 + dry-run / LLM 工具循环
-- unified diff 提案、策略校验（路径 / 规模 / **测试完整性**）、人工审批后应用
-- 结构化输出非法时的 format retry + 脱敏截断 trace；CLI 退出码 5
+- unified diff 提案、策略校验、**exact preflight**（与 PatchApplier 共用 matcher，无 fuzzy）、人工审批后应用
+- 结构化输出非法时的 format retry + 脱敏截断 trace；CLI 退出码 5；`PATCH_NOT_APPLICABLE`=6；`PATCH_BASE_CHANGED`=7
 - 控制器固定参数的 Docker pytest：禁网、512MB、1 CPU、pids=128、非 root、`--rm`、默认 120s
 - **真实 Docker 负向 E2E**：禁网生效、非 root、超时独立分类、容器清理
 - 隐藏测试评测与产品运行**物理隔离**（`<task>.hidden/` + `eval_temp_copy`）
@@ -65,15 +91,16 @@ flowchart TD
 
 ### 评测说明（勿误读）
 
-- 回归：**74 passed, 1 skipped**
-- 跳过：`test_symlink_escape_fails`（当前 Windows 主机不允许创建 symlink）
-- `sample02_normalize` 使用**固定 dry-run 硬编码补丁**验证隐藏测试基础设施，**不代表真实 LLM 表现**（见 `examples/eval_tasks/sample02_normalize/NOTE.md`）
+- 单元回归：以当前仓库 `pytest` 为准（含 patch-preflight 验收）
+- `sample02_normalize` 使用**固定 dry-run 硬编码补丁**验证隐藏测试基础设施，**不代表真实 LLM 表现**
+- Full12 × 3 见上方 **Evaluation**；v0.2 单轮 Full12（10/12）为历史基线，**不是**严格同随机样本 A/B
 
-### 当前不支持（v0.2 冻结）
+### 当前不支持（v0.3 仍冻结）
 
 - MCP、GitHub Issue、自动 clone、自动 PR / push / commit
 - 多 Agent、前端、多语言
 - 容器内在线安装仓库依赖、任意 Shell、浏览器
+- fuzzy patch apply / 猜位置
 - Hidden 失败回灌产品循环（刻意禁止）
 
 ---
@@ -110,7 +137,7 @@ OPENAI_BASE_URL=https://api.deepseek.com
 CODE_AGENT_MODEL=deepseek-chat
 ```
 
-`.env`、session 目录、`examples/eval_tasks/results/` 已被 gitignore。真实模型运行时去掉 `--dry-run-script`。
+`.env`、session 目录、`examples/llm_benchmark/results/` 已被 gitignore。真实模型运行时去掉 `--dry-run-script`。
 
 可选高风险开关：`--allow-test-changes`（默认关闭；仍禁止删测试 / 改 conftest 与 pytest 配置 / skip 与 `assert True` 等）。
 

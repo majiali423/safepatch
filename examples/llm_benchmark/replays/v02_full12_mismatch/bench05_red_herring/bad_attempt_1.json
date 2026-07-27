@@ -1,0 +1,15 @@
+{
+  "tool": "propose_patch",
+  "args": {
+    "diagnosis": "The function final_price in pricing.py incorrectly returns amount * rate instead of amount * (1 - rate). The docstring already describes the correct formula.",
+    "affected_files": [
+      "pricing.py"
+    ],
+    "unified_diff": "--- a/pricing.py\n+++ b/pricing.py\n@@ -4,5 +4,5 @@\n \n     final_price = amount * (1 - rate)\n     \"\"\"\n-    # BUG: multiplies by rate instead of (1 - rate)\n-    return amount * rate\n+    return amount * (1 - rate)",
+    "expected_behavior": "final_price(100, 0.1) now returns 90.0, matching the spec.",
+    "risk_notes": "Low risk; single-line fix that aligns implementation with documented formula.",
+    "tests_to_run": [
+      "tests/test_price.py::test_ten_percent_off"
+    ]
+  }
+}
