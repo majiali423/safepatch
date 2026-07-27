@@ -55,7 +55,7 @@ examples/
 tests/
   test_*.py
 docs/
-  FIRST_VERSION_WALKTHROUGH.md
+  WALKTHROUGH.md
   ACCEPTANCE_REPORT.md
 pyproject.toml
 README.md

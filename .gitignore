@@ -18,6 +18,10 @@ examples/eval_tasks/results/
 examples/eval_tasks/**/latest/
 examples/llm_benchmark/results/
 
+# Local scratch / personal notes (never commit)
+**/NOTES.private.md
+**/TODO.private.md
+
 # Caches
 .pytest_cache/
 .mypy_cache/

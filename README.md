@@ -1,24 +1,136 @@
-# code-agent — SafePatch MVP v0.3
+# SafePatch
 
-面向**小型本地 Python + pytest 仓库**的可靠性导向、受控代码修复 Agent。
+SafePatch is a reliability-focused code-repair agent for small local
+Python repositories that use pytest.
 
-**状态：MVP v0.3**（Patch Applicability / exact preflight · 格式重试 · 测试完整性 · 隐藏评测隔离 · Docker 负向 E2E）
+Given a repository path and a bug report or change request, SafePatch
+creates an isolated working copy, builds a lightweight AST-based
+repository map, runs a baseline test suite, and lets the model inspect
+the repository through a restricted set of read-only tools.
 
-用户输入本地仓库路径 + Bug/需求描述后，系统完成：
+Proposed unified diffs are validated against repository and test
+integrity policies, checked with an exact patch preflight, and presented
+for approval before they are applied. Approved changes are tested in a
+network-disabled, resource-limited Docker container. Each session
+exports the final diff, public and hidden evaluation logs, structured
+metrics, and an append-only execution trace.
 
-仓库导入 → Repo Map / 基线测试 → 工具循环 → 补丁提案 → 策略校验 → **exact preflight** → 人工审批 → Docker pytest → 最多三轮 repair → 导出产物
+## Overview
 
-- v0.3 Patch Applicability：[`docs/V0.3_PATCH_APPLICABILITY.md`](docs/V0.3_PATCH_APPLICABILITY.md)
-- 架构与面试讲解：[`docs/ARCHITECTURE_AND_INTERVIEW.md`](docs/ARCHITECTURE_AND_INTERVIEW.md)
-- 2 分钟 Demo 脚本：[`docs/DEMO_2MIN.md`](docs/DEMO_2MIN.md)
-- v0.2 发布说明：[`docs/V0.2_RELEASE_NOTES.md`](docs/V0.2_RELEASE_NOTES.md)
-- 走读：[`docs/FIRST_VERSION_WALKTHROUGH.md`](docs/FIRST_VERSION_WALKTHROUGH.md)
+SafePatch prioritizes **controllable repair** over open-ended autonomy.
+The product path is intentionally narrow:
 
----
+- one local Python + pytest repository at a time
+- no shell, browser, or network tools for the model
+- policy validation and exact patch preflight before approval
+- Docker pytest as the sole correctness oracle for repair attempts
+- product session status separated from hidden-test evaluation status
+
+Current product tag: **v0.3.0** (exact patch preflight / patch regeneration).
+
+## Motivation
+
+LLM-generated unified diffs often fail for reasons other than incorrect
+business logic: hallucinated context lines, policy-violating test edits,
+or environment failures. If every failed apply is counted as a repair
+attempt, sessions look like “the model cannot fix the bug” when the
+failure was really **inapplicable patch text**.
+
+SafePatch separates:
+
+| Counter | Meaning |
+|---|---|
+| Format retries | Invalid JSON / tool schema |
+| Patch regeneration | Legal proposal that fails exact preflight |
+| Repair attempts | Patch applied successfully and pytest started |
+
+## Key Capabilities
+
+- Isolated `working_copy` import (source repository is not modified)
+- AST repository map and bounded read-only tools
+- Unified-diff proposals with path / size / test-integrity policy checks
+- Exact patch preflight sharing the same hunk matcher as the applier (no fuzzy apply)
+- Human approval bound to `patch_hash` and `working_tree_hash`
+- Docker pytest with network disabled, memory/CPU/pids limits, non-root user, timeout classification
+- Append-only redacted `trace.jsonl` plus session artifacts
+- Optional hidden-test evaluation outside the agent loop
+
+## Workflow
+
+```text
+import working_copy
+→ repository map + baseline Docker pytest
+→ model tool loop (read-only)
+→ propose_patch
+→ policy validation
+→ exact patch preflight
+   ├── mismatch → structured feedback → regenerate (not a repair attempt)
+   └── applicable → approval (hash-bound)
+→ exact apply
+→ attempts_used += 1
+→ Docker pytest
+→ export artifacts
+```
+
+Hidden tests, when used, run only after product success on an evaluation
+copy and never feed back into the agent prompt or repair loop.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  CLI[cli.py] --> CTRL[TaskController]
+  CTRL --> WS[repository]
+  CTRL --> LLM[llm]
+  CTRL --> TOOLS[tools]
+  CTRL --> POL[policy]
+  CTRL --> PF[preflight]
+  PF --> ENG[hunk_engine]
+  CTRL --> APPL[applier]
+  APPL --> ENG
+  CTRL --> DOCK[docker_pytest]
+  CTRL --> TRACE[trace]
+  EVAL[hidden eval] -.->|outside product loop| DOCK
+```
+
+Core package layout:
+
+| Area | Role |
+|---|---|
+| `code_agent/controller.py` | Session state machine |
+| `code_agent/patching/` | Proposal, policy, preflight, exact apply |
+| `code_agent/runtime/` | Docker pytest runner and run config |
+| `code_agent/repository/` | Import, repo map, diffs |
+| `code_agent/tools/` | Read-only model tools |
+| `code_agent/eval/` | Hidden-test evaluation (not part of the agent loop) |
+
+See [Architecture](docs/ARCHITECTURE.md) for modules, call chain, and
+failure classification.
+
+## Reliability Model
+
+- **Exact matching only** — preflight and apply share `hunk_engine`
+- **Inapplicable patches never enter approval** and never increment repair attempts
+- **Budget** — initial patch + up to 2 regenerations per window; exhaustion → `PATCH_NOT_APPLICABLE`
+- **Approval binding** — working-tree change after approval → `PATCH_BASE_CHANGED`
+- **Environment vs logic** — Docker timeouts / daemon errors are distinct terminal statuses
+- **Test integrity** — modifying existing tests is blocked by default (`--allow-test-changes` is explicit high risk)
+
+Design notes: [Patch Applicability](docs/V0.3_PATCH_APPLICABILITY.md).
+
+## Security Boundaries
+
+- Model tools cannot request shell, Docker, or network access
+- Pytest runs with `--network none`, non-root UID, resource caps, and `--rm`
+- Host API keys are not passed into the container
+- Trace recording redacts secret-like strings
+- Source tree remains untouched; only `working_copy` is patched
 
 ## Evaluation
 
-SafePatch v0.3 was evaluated on a frozen 12-task benchmark covering single-file fixes, multi-file fixes, red-herring files, boundary cases, test-integrity constraints, and hidden-test generalisation.
+SafePatch v0.3 was evaluated on a frozen 12-task benchmark covering
+single-file fixes, multi-file fixes, red-herring files, boundary cases,
+test-integrity constraints, and hidden-test generalisation.
 
 | Metric | Result |
 |---|---|
@@ -31,130 +143,139 @@ SafePatch v0.3 was evaluated on a frozen 12-task benchmark covering single-file 
 | Apply failures after preflight | 0 |
 | Missing, unrelated or forbidden changes | 0 |
 
-The benchmark uses small dependency-free Python repositories and one model provider. These results demonstrate reliability on the evaluated scope, not general production readiness.
+The benchmark uses small dependency-free Python repositories and one
+model provider. These results demonstrate reliability on the evaluated
+scope, not general production readiness.
 
-Evidence: [`examples/llm_benchmark/FULL12_V03_X3_REPORT.md`](examples/llm_benchmark/FULL12_V03_X3_REPORT.md), mismatch-replay proof [`examples/llm_benchmark/REPLAY_V03_REPORT.md`](examples/llm_benchmark/REPLAY_V03_REPORT.md). Product tag `v0.3.0`; benchmark tag `benchmark-v0.3-deepseek-full12-x3`.
+Evidence:
 
----
+- [Full12 × 3 report](examples/llm_benchmark/FULL12_V03_X3_REPORT.md)
+- [Mismatch replay (mechanism proof)](examples/llm_benchmark/REPLAY_V03_REPORT.md)
+- Product tag `v0.3.0`; benchmark tag `benchmark-v0.3-deepseek-full12-x3`
 
-## 架构与状态 / 评测流程
-
-```mermaid
-flowchart TD
-  A[导入 working_copy] --> B[Repo Map + 基线 Docker pytest]
-  B --> C{基线通过?}
-  C -->|是| Z[SUCCEEDED]
-  C -->|否| D[LLM 工具循环]
-  D --> E{输出合法?}
-  E -->|否| F[格式重试 ≤2<br/>不计入 repair attempt]
-  F -->|耗尽| X[MODEL_OUTPUT_INVALID]
-  F --> D
-  E -->|tool / finish| D
-  E -->|propose_patch| G[PolicyValidator<br/>含测试完整性]
-  G -->|策略拒绝| D
-  G -->|通过| PF[exact PatchPreflight]
-  PF -->|mismatch| RG[regeneration ≤2<br/>不计入 repair]
-  RG -->|耗尽| NA[PATCH_NOT_APPLICABLE]
-  RG --> D
-  PF -->|applicable| H[人工审批 bound hashes]
-  H -->|拒绝| R[REJECTED]
-  H -->|基线变化| BC[PATCH_BASE_CHANGED]
-  H -->|批准| I[exact apply + attempts+=1 + Docker pytest]
-  I -->|超时/环境| T[TEST_TIMEOUT / TEST_ENVIRONMENT_ERROR]
-  I -->|失败且 attempts&lt;3| D
-  I -->|失败且耗尽| M[FAILED_MAX_ATTEMPTS]
-  I -->|通过| Z[产品 SUCCEEDED]
-  Z -.->|仅评测器| P[eval_temp_copy + hidden pytest]
-  P --> Q{EvalStatus}
-  Q -->|hidden 通过 / 未配置| S1[eval SUCCEEDED]
-  Q -->|hidden 失败| S2[HIDDEN_TESTS_FAILED]
-```
-
-要点：
-
-- **产品**只看 `summary.status`（`SessionStatus`）。
-- **评测**另有 `metrics.eval_status`（`EvalStatus`）；hidden 失败不反馈 Agent、不触发新修复轮。
-- format retry、patch regeneration、repair attempt **三类计数分离**。
-
----
-
-## 能力边界（请按此诚实对外表述）
-
-### 已具备并已验证
-
-- 小型本地 Python 仓导入 `working_copy`（原仓不被修改）
-- AST Repo Map + 受限只读工具 + dry-run / LLM 工具循环
-- unified diff 提案、策略校验、**exact preflight**（与 PatchApplier 共用 matcher，无 fuzzy）、人工审批后应用
-- 结构化输出非法时的 format retry + 脱敏截断 trace；CLI 退出码 5；`PATCH_NOT_APPLICABLE`=6；`PATCH_BASE_CHANGED`=7
-- 控制器固定参数的 Docker pytest：禁网、512MB、1 CPU、pids=128、非 root、`--rm`、默认 120s
-- **真实 Docker 负向 E2E**：禁网生效、非 root、超时独立分类、容器清理
-- 隐藏测试评测与产品运行**物理隔离**（`<task>.hidden/` + `eval_temp_copy`）
-- 产物：`final.diff`、公开测试日志、`trace.jsonl`；评测另有 `hidden.log` / `eval_trace.jsonl` / `metrics.json`
-
-### 评测说明（勿误读）
-
-- 单元回归：以当前仓库 `pytest` 为准（含 patch-preflight 验收）
-- `sample02_normalize` 使用**固定 dry-run 硬编码补丁**验证隐藏测试基础设施，**不代表真实 LLM 表现**
-- Full12 × 3 见上方 **Evaluation**；v0.2 单轮 Full12（10/12）为历史基线，**不是**严格同随机样本 A/B
-
-### 当前不支持（v0.3 仍冻结）
-
-- MCP、GitHub Issue、自动 clone、自动 PR / push / commit
-- 多 Agent、前端、多语言
-- 容器内在线安装仓库依赖、任意 Shell、浏览器
-- fuzzy patch apply / 猜位置
-- Hidden 失败回灌产品循环（刻意禁止）
-
----
-
-## 安装
+## Quick Start
 
 ```bash
 pip install -e ".[dev]"
 ```
 
-## 真实 Docker 演示
-
 ```powershell
 docker info
 code-agent --build-image
 code-agent --docker-check
+```
 
+```powershell
+copy .env.example .env
+# Set OPENAI_API_KEY / OPENAI_BASE_URL / CODE_AGENT_MODEL as needed
+```
+
+## CLI Usage
+
+Deterministic demo (dry-run script, no API key):
+
+```powershell
 code-agent examples\buggy_calculator `
-  "divide 函数在除数为 0 时应该抛出 ValueError，但现在抛出了 ZeroDivisionError，请修复。" `
+  "divide raises ZeroDivisionError on b==0; it should raise ValueError." `
   --dry-run-script examples\dry_run_fix_divide.json `
   --yes
 ```
 
-配置真实模型（OpenAI 兼容，含 DeepSeek）：
+Live model run: omit `--dry-run-script`. Use `--yes` only when automatic
+approval is acceptable.
 
-```powershell
-copy .env.example .env
-# 编辑 .env
-```
+Exit codes (selected):
 
-```env
-OPENAI_API_KEY=sk-你的密钥
-OPENAI_BASE_URL=https://api.deepseek.com
-CODE_AGENT_MODEL=deepseek-chat
-```
-
-`.env`、session 目录、`examples/llm_benchmark/results/` 已被 gitignore。真实模型运行时去掉 `--dry-run-script`。
-
-可选高风险开关：`--allow-test-changes`（默认关闭；仍禁止删测试 / 改 conftest 与 pytest 配置 / skip 与 `assert True` 等）。
-
-隐藏评测样例（dry-run，需 Docker）：
-
-```powershell
-python examples\eval_tasks\run_hidden_samples.py
-```
-
-## 架构借鉴
-
-| 开源项目 | 借鉴点 |
+| Code | Status |
 |---|---|
-| mini-SWE-agent | 线性 Agent 循环 |
-| Aider | Repo Map + unified diff |
-| SWE-agent | TaskSession / trace |
-| OpenHands | Agent 与 Runtime 分离 |
-| goose | 写操作人工审批 |
+| 0 | `SUCCEEDED` |
+| 3 | `REJECTED` |
+| 4 | `TEST_ENVIRONMENT_ERROR` / `TEST_TIMEOUT` |
+| 5 | `MODEL_OUTPUT_INVALID` |
+| 6 | `PATCH_NOT_APPLICABLE` |
+| 7 | `PATCH_BASE_CHANGED` |
+
+More detail: [Demo](docs/DEMO.md).
+
+## Output Artifacts
+
+Per session under the session `artifacts/` directory:
+
+| Artifact | Description |
+|---|---|
+| `final.diff` | Unified diff vs import snapshot |
+| `summary.json` | Status, counters, changed files |
+| `trace.jsonl` | Append-only execution events (redacted) |
+| `baseline.log` / `attempt-*.log` | Pytest logs |
+| `hidden.log` / `eval_trace.jsonl` | Present when hidden evaluation runs |
+
+## Project Scope
+
+In scope:
+
+- Small local Python repositories with pytest
+- Controlled repair with human approval
+- Exact unified-diff application
+- Docker-isolated public tests and optional hidden evaluation
+
+Out of scope (v0.3):
+
+- MCP, automatic PR / push / commit, multi-agent orchestration
+- Frontend, multilingual product UI
+- Online dependency installation inside the test container
+- Fuzzy patch application or context guessing
+- Feeding hidden-test failures back into the agent loop
+
+## Known Limitations
+
+- Benchmark coverage is a fixed micro-suite; scores are not proof of
+  production readiness on arbitrary repositories
+- Model sampling varies; regeneration paths may or may not appear in a
+  given live run
+- Symlink edge-case tests may be skipped on hosts that cannot create
+  symlinks
+- Package metadata version in `pyproject.toml` may lag the git tag; treat
+  git tags as the release source of truth for v0.3 documentation
+
+## Repository Structure
+
+```text
+code_agent/                 Product package
+docs/                       Design and operator documentation
+examples/buggy_calculator/  Minimal demo repository
+examples/dry_run_*.json     Deterministic tool scripts
+examples/eval_tasks/        Hidden-eval samples
+examples/llm_benchmark/     Frozen benchmark assets and reports
+tests/                      Unit / integration / Docker E2E tests
+```
+
+## Documentation
+
+| Document | Description |
+|---|---|
+| [Architecture](docs/ARCHITECTURE.md) | Modules, workflow, reliability choices |
+| [Patch Applicability](docs/V0.3_PATCH_APPLICABILITY.md) | Preflight / regeneration design |
+| [Demo](docs/DEMO.md) | End-to-end demonstration guide |
+| [Walkthrough](docs/WALKTHROUGH.md) | Conceptual end-to-end explanation |
+| [v0.2 Release Notes](docs/V0.2_RELEASE_NOTES.md) | Prior release notes |
+| [Acceptance Report](docs/ACCEPTANCE_REPORT.md) | Verification layers (historical) |
+
+## Development
+
+```bash
+pip install -e ".[dev]"
+pytest
+```
+
+Docker-dependent negative E2E:
+
+```bash
+pytest -m docker_e2e
+```
+
+Do not commit `.env`, session directories, or `examples/llm_benchmark/results/`.
+
+## License
+
+No SPDX license file has been published in this repository yet. Treat the
+code as source-available until a license is added.
