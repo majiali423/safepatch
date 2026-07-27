@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from code_agent.patching.hunk_engine import (
+    HunkMatchError,
     apply_hunks_to_text,
     content_from_new_file_diff,
     is_new_file,
@@ -21,12 +22,25 @@ _apply_hunks = apply_hunks_to_text
 _is_new_file = is_new_file
 _content_from_new_file_diff = content_from_new_file_diff
 
+# Recoverable exact-match failures → patch regeneration budget.
+RECOVERABLE_APPLY_ERROR_KINDS = frozenset(
+    {
+        "context_mismatch",
+        "deletion_mismatch",
+        "no_hunks",
+        "overlapping_hunk",
+    }
+)
+
 
 @dataclass
 class ApplyResult:
     ok: bool
     error: str | None = None
     files: list[str] | None = None
+    error_kind: str | None = None
+    target_file: str | None = None
+    rollback_succeeded: bool | None = None
 
 
 class PatchApplier:
@@ -35,6 +49,59 @@ class PatchApplier:
     @staticmethod
     def apply(proposal: PatchProposal, workspace_root: Path) -> ApplyResult:
         return apply_proposal(proposal, workspace_root)
+
+
+def classify_apply_error_kind(
+    *,
+    error_kind: str | None,
+    error: str | None,
+) -> str:
+    """Normalize apply failure kind for controller branching."""
+    if error_kind:
+        return error_kind
+    text = (error or "").lower()
+    if "permissionerror" in text or "permission denied" in text:
+        return "permission_error"
+    if "timeout" in text and "io" in text:
+        return "io_error"
+    if any(
+        token in text
+        for token in (
+            "errno",
+            "oserror",
+            "ioerror",
+            "file exists",
+            "no space",
+            "disk",
+            "readonly",
+            "read-only",
+        )
+    ):
+        return "io_error"
+    if "base_changed" in text or "working tree" in text and "changed" in text:
+        return "base_changed"
+    if any(
+        token in text
+        for token in (
+            "context mismatch",
+            "deletion mismatch",
+            "no hunks",
+            "overlapping",
+        )
+    ):
+        # Prefer specific kinds when the message embeds them.
+        if "deletion mismatch" in text:
+            return "deletion_mismatch"
+        if "no hunks" in text:
+            return "no_hunks"
+        if "overlapping" in text:
+            return "overlapping_hunk"
+        return "context_mismatch"
+    return "internal_error"
+
+
+def is_recoverable_apply_error(error_kind: str) -> bool:
+    return error_kind in RECOVERABLE_APPLY_ERROR_KINDS
 
 
 def apply_proposal(
@@ -51,21 +118,31 @@ def apply_proposal(
         allow_new_tests=allow_new_tests,
     )
     if not validation.ok:
-        return ApplyResult(ok=False, error="; ".join(validation.errors))
+        return ApplyResult(
+            ok=False,
+            error="; ".join(validation.errors),
+            error_kind="internal_error",
+            target_file=None,
+            rollback_succeeded=True,  # nothing written
+        )
 
     # Backup touched existing files for rollback
     backups: dict[Path, str | None] = {}
     created: list[Path] = []
+    current_file: str | None = None
 
     try:
         file_diffs = split_file_diffs(proposal.unified_diff)
         for file_path, body in file_diffs:
+            current_file = file_path
             target = (workspace_root / file_path).resolve()
             target.relative_to(workspace_root.resolve())
 
             if is_new_file(body):
                 if target.exists():
-                    raise RuntimeError(f"Refusing to overwrite existing file: {file_path}")
+                    raise RuntimeError(
+                        f"Refusing to overwrite existing file: {file_path}"
+                    )
                 content = content_from_new_file_diff(body)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 _write_text_raw(target, content)
@@ -80,8 +157,27 @@ def apply_proposal(
 
         return ApplyResult(ok=True, files=validation.files)
     except Exception as exc:  # noqa: BLE001
-        _rollback(backups, created)
-        return ApplyResult(ok=False, error=str(exc))
+        rollback_ok = _safe_rollback(backups, created)
+        kind, target = _classify_exception(exc, current_file)
+        return ApplyResult(
+            ok=False,
+            error=str(exc),
+            error_kind=kind,
+            target_file=target,
+            rollback_succeeded=rollback_ok,
+        )
+
+
+def _classify_exception(
+    exc: BaseException, current_file: str | None
+) -> tuple[str, str | None]:
+    if isinstance(exc, HunkMatchError):
+        return exc.error_kind, exc.target_file or current_file
+    if isinstance(exc, PermissionError):
+        return "permission_error", current_file
+    if isinstance(exc, OSError):
+        return "io_error", current_file
+    return "internal_error", current_file
 
 
 def _read_text_raw(path: Path) -> str:
@@ -110,3 +206,11 @@ def _rollback(backups: dict[Path, str | None], created: list[Path]) -> None:
             parent = path.parent
             if parent.exists() and not any(parent.iterdir()):
                 shutil.rmtree(parent, ignore_errors=True)
+
+
+def _safe_rollback(backups: dict[Path, str | None], created: list[Path]) -> bool:
+    try:
+        _rollback(backups, created)
+        return True
+    except Exception:  # noqa: BLE001
+        return False

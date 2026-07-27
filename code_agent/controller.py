@@ -12,7 +12,11 @@ from code_agent.llm import (
     ModelOutputError,
     raw_preview,
 )
-from code_agent.patching.applier import apply_proposal
+from code_agent.patching.applier import (
+    apply_proposal,
+    classify_apply_error_kind,
+    is_recoverable_apply_error,
+)
 from code_agent.patching.hashes import patch_hash, working_tree_hash
 from code_agent.patching.preflight import PatchPreflight, PreflightFailure
 from code_agent.patching.proposal import parse_proposal
@@ -178,14 +182,26 @@ class TaskController:
                 if not apply_result.ok:
                     session.patch_apply_failures_after_preflight += 1
                     err = apply_result.error or "apply failed after preflight"
+                    error_kind = classify_apply_error_kind(
+                        error_kind=apply_result.error_kind,
+                        error=err,
+                    )
+                    rollback_succeeded = apply_result.rollback_succeeded
+                    if rollback_succeeded is None:
+                        rollback_succeeded = True
                     trace.emit(
                         "patch_apply_failed_after_preflight",
                         attempt=next_attempt_no,
                         error=err,
+                        error_kind=error_kind,
+                        target_file=apply_result.target_file,
+                        rollback_succeeded=rollback_succeeded,
                         patch_hash=binding.patch_hash,
                         working_tree_hash=binding.working_tree_hash,
                     )
-                    self.say(f"Patch apply failed after preflight: {err}")
+                    self.say(
+                        f"Patch apply failed after preflight ({error_kind}): {err}"
+                    )
                     session.attempts.append(
                         AttemptRecord(
                             attempt=next_attempt_no,
@@ -197,8 +213,23 @@ class TaskController:
                             working_tree_hash=binding.working_tree_hash,
                         )
                     )
+
+                    if error_kind == "base_changed":
+                        session.status = SessionStatus.PATCH_BASE_CHANGED
+                        session.stop_reason = "patch_base_changed"
+                        session.last_error = err
+                        break
+
+                    if not is_recoverable_apply_error(error_kind):
+                        # I/O / permission / internal: no regen, no repair, no pytest.
+                        session.status = SessionStatus.ERROR
+                        session.stop_reason = f"patch_apply_{error_kind}"
+                        session.last_error = f"{error_kind}: {err}"
+                        break
+
                     session.last_apply_feedback = (
                         "PATCH_APPLY_FAILED_AFTER_PREFLIGHT:\n"
+                        f"error_kind={error_kind}\n"
                         f"{err}\n"
                         "Re-read the target file and propose_patch again with an "
                         "exact unified diff for the current working tree."
@@ -214,6 +245,7 @@ class TaskController:
 
                 # Repair attempt starts only after successful exact apply.
                 session.attempts_used += 1
+                # Regeneration budget resets only after a successful apply.
                 session.consecutive_patch_regeneration_retries = 0
                 session.last_apply_feedback = ""
                 attempt = AttemptRecord(
@@ -521,7 +553,8 @@ class TaskController:
         session.patch_preflight_successes += 1
         if session.first_patch_applicable is None:
             session.first_patch_applicable = True
-        session.consecutive_patch_regeneration_retries = 0
+        # Do NOT reset consecutive_patch_regeneration_retries here — a later
+        # apply-after-preflight mismatch must still accumulate toward NA.
         binding = ApprovalBinding(
             patch_hash=result.patch_hash,
             working_tree_hash=result.working_tree_hash,

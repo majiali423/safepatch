@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "code-agent"
-version = "0.2.0"
+version = "0.3.1"
 description = "A small-Python-repo code repair agent with Docker pytest and human approval"
 readme = "README.md"
 requires-python = ">=3.10"

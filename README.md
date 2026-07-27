@@ -28,7 +28,7 @@ The product path is intentionally narrow:
 - Docker pytest as the sole correctness oracle for repair attempts
 - product session status separated from hidden-test evaluation status
 
-Current product tag: **v0.3.0** (exact patch preflight / patch regeneration).
+Current product tag: **v0.3.1** (exact patch preflight / patch regeneration; apply-failure classification).
 
 ## Motivation
 
@@ -153,7 +153,7 @@ Evidence:
 
 - [Full12 × 3 report](examples/llm_benchmark/FULL12_V03_X3_REPORT.md)
 - [Mismatch replay (mechanism proof)](examples/llm_benchmark/REPLAY_V03_REPORT.md)
-- Product tag `v0.3.0`; benchmark tag `benchmark-v0.3-deepseek-full12-x3`
+- Product tag `v0.3.1` (historical Full12 evidence frozen at `v0.3.0` / `benchmark-v0.3-deepseek-full12-x3`)
 
 ## Quick Start
 

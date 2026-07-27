@@ -18,7 +18,7 @@ SafePatch 优先保证**可控修复**，而非开放式自治。产品路径刻
 - Docker pytest 是 repair attempt 的唯一正确性判据
 - 产品会话状态与隐藏测试评测状态分离
 
-当前产品标签：**v0.3.0**（精确补丁预检 / patch regeneration）。
+当前产品标签：**v0.3.1**（精确补丁预检 / patch regeneration；apply 失败分类）。
 
 ## 动机
 
@@ -133,7 +133,7 @@ SafePatch v0.3 在冻结的 12 题基准上评测，覆盖单文件修复、多�
 
 - [Full12 × 3 报告](examples/llm_benchmark/FULL12_V03_X3_REPORT.md)
 - [Mismatch 回放（机制证明）](examples/llm_benchmark/REPLAY_V03_REPORT.md)
-- 产品标签 `v0.3.0`；评测标签 `benchmark-v0.3-deepseek-full12-x3`
+- 产品标签 `v0.3.1`（历史评测冻结于 `v0.3.0` / `benchmark-v0.3-deepseek-full12-x3`）
 
 ## 快速开始
 

@@ -1,6 +1,6 @@
 # SafePatch Architecture
 
-Product tag: **v0.3.0**. This document describes system structure, session
+Product tag: **v0.3.1**. This document describes system structure, session
 workflow, module responsibilities, and reliability trade-offs. It is not a
 substitute for reading the source under `code_agent/`.
 

@@ -340,7 +340,13 @@ def test_apply_failed_after_preflight_trace(tmp_path: Path, monkeypatch):
             flaky_apply._failed_once = True  # type: ignore[attr-defined]
             from code_agent.patching.applier import ApplyResult
 
-            return ApplyResult(ok=False, error="simulated race after preflight")
+            return ApplyResult(
+                ok=False,
+                error="context_mismatch: simulated race after preflight",
+                error_kind="context_mismatch",
+                target_file="mod.py",
+                rollback_succeeded=True,
+            )
         return real_apply(proposal, workspace_root, **kwargs)
 
     monkeypatch.setattr(controller_mod, "apply_proposal", flaky_apply)
