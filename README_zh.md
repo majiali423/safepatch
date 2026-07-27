@@ -185,10 +185,57 @@ code-agent examples\buggy_calculator `
 | 产物 | 说明 |
 |---|---|
 | `final.diff` | 相对导入快照的 unified diff |
-| `summary.json` | 状态、计数器、变更文件 |
+| `summary.json` | 状态、计数器、变更文件、observability 卡片 |
 | `trace.jsonl` | 只追加的执行事件（已脱敏） |
 | `baseline.log` / `attempt-*.log` | Pytest 日志 |
 | `hidden.log` / `eval_trace.jsonl` | 运行隐藏评测时存在 |
+
+### Session Observability（会话可观测性）
+
+每个 `summary.json` 含 `observability` 对象：墙上时钟时间戳、单调时钟
+`duration_ms`、模型/工具/pytest 计数，以及 provider 返回时的 token usage
+（未返回则为 `null`，从不按字符估算）。SafePatch **不**发送外部 telemetry。
+详见 [Session Observability](docs/SESSION_OBSERVABILITY.md)。
+
+示例（节选）：
+
+```json
+{
+  "summary_schema_version": 1,
+  "status": "SUCCEEDED",
+  "attempts_used": 1,
+  "observability": {
+    "duration_ms": 12050,
+    "model": {
+      "provider": "openai_compatible",
+      "name": "deepseek-chat",
+      "tool_calling_protocol": "custom_json",
+      "calls": 4,
+      "usage": {
+        "prompt_tokens": 1200,
+        "completion_tokens": 350,
+        "total_tokens": 1550,
+        "cached_tokens": null,
+        "source": "provider",
+        "available": true,
+        "complete": true,
+        "calls_with_usage": 4,
+        "calls_without_usage": 0
+      }
+    },
+    "retries": {
+      "format": 0,
+      "patch_regeneration": 0,
+      "repair_attempts": 1
+    },
+    "tests": {
+      "baseline_runs": 1,
+      "post_apply_runs": 1,
+      "total_runs": 2
+    }
+  }
+}
+```
 
 ## 项目范围
 
@@ -231,6 +278,7 @@ tests/                      单元 / 集成 / Docker E2E 测试
 | 文档 | 说明 |
 |---|---|
 | [Architecture](docs/ARCHITECTURE.md) | 模块、工作流、可靠性取舍 |
+| [Session Observability](docs/SESSION_OBSERVABILITY.md) | 会话计数、token、耗时 |
 | [Patch Applicability](docs/V0.3_PATCH_APPLICABILITY.md) | 预检 / regeneration 设计 |
 | [Demo](docs/DEMO.md) | 端到端演示指南 |
 | [Walkthrough](docs/WALKTHROUGH.md) | 概念性端到端说明 |

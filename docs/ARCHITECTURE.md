@@ -74,6 +74,10 @@ flowchart LR
 | `patch_regeneration_retries` | Legal proposal that fails exact preflight |
 | `repair_attempts` (`attempts_used`) | Successful apply followed by pytest |
 
+Per-session machine-readable totals (model calls, tools, pytest runs,
+tokens, monotonic duration) live under `summary.json` → `observability`.
+See [Session Observability](SESSION_OBSERVABILITY.md).
+
 ## Selected terminal statuses
 
 | Status | When |

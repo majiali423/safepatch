@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 import shutil
+import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from code_agent.llm import (
     FORMAT_RETRY_HINT,
@@ -37,12 +38,20 @@ from code_agent.state import (
     PatchProposal,
     SessionStatus,
     TaskSession,
+    TokenUsage,
 )
-from code_agent.tools.registry import ToolError, ToolRegistry, execute_tool
+from code_agent.tools.registry import (
+    READ_TOOLS,
+    ToolError,
+    ToolRegistry,
+    execute_tool,
+)
 from code_agent.tracing.recorder import TraceRecorder
 
 ApprovalFn = Callable[[ApprovalBinding, int], bool]
 MessageFn = Callable[[str], None]
+# Inspection tools counted as read_tool_calls (budgeted READ_TOOLS + get_current_diff).
+_READ_LIKE_TOOLS = READ_TOOLS | {"get_current_diff"}
 
 
 class TaskController:
@@ -58,6 +67,8 @@ class TaskController:
         allow_test_changes: bool = False,
         allow_new_tests: bool = True,
         policy: PolicyValidator | None = None,
+        wall_time: Callable[[], float] | None = None,
+        monotonic: Callable[[], float] | None = None,
     ) -> None:
         self.llm = llm
         self.runner = runner or DockerPytestRunner()
@@ -71,6 +82,8 @@ class TaskController:
             allow_test_changes=allow_test_changes,
             allow_new_tests=allow_new_tests,
         )
+        self._wall_time = wall_time or time.time
+        self._monotonic = monotonic or time.perf_counter
 
     def run(self, repo_path: Path, bug_description: str) -> TaskSession:
         imported = import_repository(repo_path, self.session_base)
@@ -83,6 +96,7 @@ class TaskController:
             bug_description=bug_description,
             status=SessionStatus.CREATED,
         )
+        self._init_observability(session)
         trace = TraceRecorder(session.artifacts_dir / "trace.jsonl")
         trace.emit(
             "session_created",
@@ -272,6 +286,7 @@ class TaskController:
 
                 session.status = SessionStatus.TESTING
                 self.say(f"Running Docker pytest (attempt {session.attempts_used})...")
+                session.observability.post_apply_pytest_runs += 1
                 test_result = self.runner.run_pytest(
                     session.workspace_root,
                     log_path=session.artifacts_dir / f"attempt-{session.attempts_used}.log",
@@ -313,10 +328,11 @@ class TaskController:
                     break
                 session.status = SessionStatus.ANALYZING
 
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             session.status = SessionStatus.ERROR
             session.stop_reason = "internal_error"
             session.last_error = str(exc)
+            self._finish_observability(session)
             trace.emit("session_finished", status=session.status.value, error=str(exc))
             self._write_artifacts(session, snapshot_root)
             raise
@@ -324,6 +340,26 @@ class TaskController:
         self._finalize(session, trace, snapshot_root)
         return session
 
+    def _init_observability(self, session: TaskSession) -> None:
+        obs = session.observability
+        obs.start(wall_time=self._wall_time, monotonic=self._monotonic)
+        obs.model_provider = self.llm.provider_name
+        obs.model_name = self.llm.model
+        obs.tool_calling_protocol = self.llm.tool_calling_protocol
+        obs.temperature = getattr(self.llm, "temperature", None)
+        # Count provider attempts at invocation start (inside LLMClient._fetch_raw).
+        self.llm.on_provider_invocation = obs.note_provider_invocation
+
+    def _finish_observability(self, session: TaskSession) -> None:
+        if session.observability.finished_at is None:
+            session.observability.finish(
+                wall_time=self._wall_time, monotonic=self._monotonic
+            )
+
+    def _record_call_usage(
+        self, session: TaskSession, usage: TokenUsage | None
+    ) -> None:
+        session.observability.record_call_usage(usage)
 
     def _import_phase(self, session, imported, trace, snapshot_root) -> None:
         session.status = SessionStatus.IMPORTED
@@ -347,6 +383,7 @@ class TaskController:
 
     def _baseline_phase(self, session: TaskSession, trace: TraceRecorder) -> None:
         self.say("Running baseline pytest in Docker...")
+        session.observability.baseline_pytest_runs += 1
         result = self.runner.run_pytest(
             session.workspace_root,
             log_path=session.artifacts_dir / "baseline.log",
@@ -390,11 +427,16 @@ class TaskController:
             trace.emit("model_request", step=step, messages_tail=messages[-1])
             try:
                 response = self.llm.complete(messages)
+                self._record_call_usage(session, response.usage)
             except ModelOutputError as exc:
+                # Invocation already counted; record usage outcome (may be null).
+                self._record_call_usage(session, getattr(exc, "usage", None))
                 if self._handle_format_error(session, trace, messages, step, exc):
                     return None
                 continue
             except LLMError as exc:
+                if getattr(exc, "provider_invoked", False):
+                    self._record_call_usage(session, None)
                 session.status = SessionStatus.ERROR
                 session.stop_reason = "llm_error"
                 session.last_error = str(exc)
@@ -411,6 +453,7 @@ class TaskController:
                 tool=response.tool,
             )
             self.say(f"Agent tool: {response.tool}")
+            session.observability.tool_calls_total += 1
 
             if response.tool == "propose_patch":
                 try:
@@ -422,6 +465,7 @@ class TaskController:
                         return None
                     continue
 
+                session.observability.proposal_calls += 1
                 validation = self.policy.validate(
                     proposal, session.workspace_root
                 )
@@ -466,6 +510,8 @@ class TaskController:
                 session.stop_reason = reason
                 return None
 
+            if response.tool in _READ_LIKE_TOOLS:
+                session.observability.read_tool_calls += 1
             try:
                 result_text, _terminal = execute_tool(
                     registry, response.tool, response.args
@@ -708,6 +754,7 @@ class TaskController:
         trace: TraceRecorder,
         snapshot_root: Path,
     ) -> None:
+        self._finish_observability(session)
         self._write_artifacts(session, snapshot_root)
         trace.emit(
             "session_finished",

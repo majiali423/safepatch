@@ -11,8 +11,9 @@ import hashlib
 import json
 import re
 import shutil
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from code_agent.eval.status import EvalStatus
 from code_agent.runtime.docker_pytest import DockerPytestRunner
@@ -52,6 +53,7 @@ def evaluate_after_product(
         "format_retries_used": product_summary.get("total_format_retries_used"),
         "changed_files": list(product_summary.get("changed_files") or []),
         "no_hidden_tests_configured": hidden_dir is None,
+        "hidden_pytest_runs": 0,
     }
 
     if not public_pass:
@@ -200,11 +202,13 @@ def run_hidden_tests(
 
     test_count = sum(item["test_count"] for item in injected)
     metrics = _status_from_hidden_result(result, hidden_test_count=test_count)
+    metrics["hidden_pytest_runs"] = 1
     eval_trace.emit(
         "eval_finished",
         eval_status=metrics["eval_status"],
         hidden_pass=metrics["hidden_pass"],
         hidden_exit_code=metrics["hidden_exit_code"],
+        hidden_pytest_runs=1,
     )
     return metrics
 
@@ -233,7 +237,7 @@ def _count_tests_in_source(text: str) -> int:
     try:
         tree = ast.parse(text)
     except SyntaxError:
-        return len(re.findall(r"^\s*def\s+test_", text, flags=re.M))
+        return len(re.findall(r"^\s*def\s+test_", text, flags=re.MULTILINE))
     n = 0
     for node in tree.body:
         if isinstance(node, ast.FunctionDef) and node.name.startswith("test_"):

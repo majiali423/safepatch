@@ -3,10 +3,12 @@ from __future__ import annotations
 import json
 import os
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
+from code_agent.state import TokenUsage
 from code_agent.tracing.recorder import _redact
 
 SYSTEM_PROMPT = """You are a careful code-repair agent for a small local Python repository.
@@ -39,6 +41,8 @@ JSON formats:
 """
 
 RAW_PREVIEW_MAX = 2000
+DEFAULT_TEMPERATURE = 0.1
+TOOL_CALLING_PROTOCOL = "custom_json"
 
 FORMAT_RETRY_HINT = (
     "FORMAT_ERROR: Your previous reply was not a valid single JSON tool call. "
@@ -59,10 +63,15 @@ class LLMResponse:
     raw_text: str
     tool: str
     args: dict[str, Any]
+    usage: TokenUsage | None = None
 
 
 class LLMError(RuntimeError):
     """API / configuration failures (not model format issues)."""
+
+    def __init__(self, message: str, *, provider_invoked: bool = False) -> None:
+        super().__init__(message)
+        self.provider_invoked = provider_invoked
 
 
 class ModelOutputError(Exception):
@@ -74,10 +83,12 @@ class ModelOutputError(Exception):
         *,
         error_kind: FormatErrorKind,
         raw_text: str = "",
+        usage: TokenUsage | None = None,
     ) -> None:
         super().__init__(message)
         self.error_kind = error_kind
         self.raw_text = raw_text or ""
+        self.usage = usage
 
 
 class LLMClient:
@@ -88,6 +99,8 @@ class LLMClient:
         api_key: str | None = None,
         base_url: str | None = None,
         dry_run_script: list[Any] | None = None,
+        temperature: float = DEFAULT_TEMPERATURE,
+        on_provider_invocation: Callable[[], None] | None = None,
     ) -> None:
         self.model = model or os.getenv("CODE_AGENT_MODEL", "gpt-4o-mini")
         self.api_key = api_key or os.getenv("OPENAI_API_KEY") or os.getenv(
@@ -96,47 +109,87 @@ class LLMClient:
         self.base_url = base_url or os.getenv("OPENAI_BASE_URL") or os.getenv(
             "CODE_AGENT_BASE_URL"
         )
+        self.temperature = temperature
         self._dry_run_script = list(dry_run_script or [])
         self._dry_idx = 0
         self._client = None
+        self.on_provider_invocation = on_provider_invocation
+
+    @property
+    def provider_name(self) -> str:
+        if self._dry_run_script:
+            return "dry_run"
+        return "openai_compatible"
+
+    @property
+    def tool_calling_protocol(self) -> str:
+        return TOOL_CALLING_PROTOCOL
+
+    def _emit_provider_invocation(self) -> None:
+        """Notify listeners that a provider call is about to start."""
+        if self.on_provider_invocation is not None:
+            self.on_provider_invocation()
 
     def complete(self, messages: list[dict[str, str]]) -> LLMResponse:
-        raw = self._fetch_raw(messages)
-        parsed = parse_tool_call(raw)
+        raw, usage = self._fetch_raw(messages)
+        try:
+            parsed = parse_tool_call(raw)
+        except ModelOutputError as exc:
+            exc.usage = usage
+            raise
         return LLMResponse(
-            raw_text=raw, tool=parsed["tool"], args=parsed.get("args", {})
+            raw_text=raw,
+            tool=parsed["tool"],
+            args=parsed.get("args", {}),
+            usage=usage,
         )
 
-    def _fetch_raw(self, messages: list[dict[str, str]]) -> str:
+    def _fetch_raw(self, messages: list[dict[str, str]]) -> tuple[str, TokenUsage]:
         if self._dry_run_script:
+            # Dry-run is the test double for a provider invocation.
+            self._emit_provider_invocation()
             if self._dry_idx >= len(self._dry_run_script):
-                raise LLMError("Dry-run script exhausted")
+                raise LLMError(
+                    "Dry-run script exhausted", provider_invoked=True
+                )
             item = self._dry_run_script[self._dry_idx]
             self._dry_idx += 1
+            usage = TokenUsage.unavailable()
             if isinstance(item, str):
-                return item
-            if isinstance(item, dict) and "raw" in item:
-                return str(item["raw"])
-            return json.dumps(item, ensure_ascii=False)
+                return item, usage
+            if isinstance(item, dict):
+                if "usage" in item:
+                    usage = normalize_token_usage(item.get("usage"), source="provider")
+                if "raw" in item:
+                    return str(item["raw"]), usage
+                payload = {k: v for k, v in item.items() if k != "usage"}
+                return json.dumps(payload, ensure_ascii=False), usage
+            return json.dumps(item, ensure_ascii=False), usage
 
         if not self.api_key:
+            # Local configuration error — provider was never contacted.
             raise LLMError(
-                "No API key. Set OPENAI_API_KEY or use --dry-run with a script."
+                "No API key. Set OPENAI_API_KEY or use --dry-run with a script.",
+                provider_invoked=False,
             )
 
+        self._emit_provider_invocation()
         try:
             client = self._get_client()
             response = client.chat.completions.create(
                 model=self.model,
-                temperature=0.1,
+                temperature=self.temperature,
                 messages=[{"role": "system", "content": SYSTEM_PROMPT}, *messages],
             )
-        except LLMError:
-            raise
-        except Exception as exc:  # noqa: BLE001
-            raise LLMError(str(exc)) from exc
+        except LLMError as exc:
+            raise LLMError(str(exc), provider_invoked=True) from exc
+        except Exception as exc:
+            raise LLMError(str(exc), provider_invoked=True) from exc
 
-        return response.choices[0].message.content or ""
+        usage = normalize_token_usage(
+            getattr(response, "usage", None), source="provider"
+        )
+        return response.choices[0].message.content or "", usage
 
     def _get_client(self):
         if self._client is None:
@@ -147,6 +200,70 @@ class LLMClient:
                 kwargs["base_url"] = self.base_url
             self._client = OpenAI(**kwargs)
         return self._client
+
+
+def normalize_token_usage(raw: Any, *, source: str = "provider") -> TokenUsage:
+    """Normalize provider-specific usage objects into TokenUsage.
+
+    Missing fields stay None. Never estimates tokens from character counts.
+    """
+    if raw is None:
+        return TokenUsage.unavailable()
+
+    if isinstance(raw, TokenUsage):
+        return raw
+
+    if isinstance(raw, dict):
+        prompt = raw.get("prompt_tokens", raw.get("input_tokens"))
+        completion = raw.get("completion_tokens", raw.get("output_tokens"))
+        total = raw.get("total_tokens")
+        cached = raw.get("cached_tokens")
+        details = raw.get("prompt_tokens_details")
+        if cached is None and isinstance(details, dict):
+            cached = details.get("cached_tokens")
+        if all(v is None for v in (prompt, completion, total, cached)):
+            return TokenUsage.unavailable()
+        return TokenUsage(
+            prompt_tokens=_as_optional_int(prompt),
+            completion_tokens=_as_optional_int(completion),
+            total_tokens=_as_optional_int(total),
+            cached_tokens=_as_optional_int(cached),
+            source=source,
+        )
+
+    prompt = getattr(raw, "prompt_tokens", None)
+    if prompt is None:
+        prompt = getattr(raw, "input_tokens", None)
+    completion = getattr(raw, "completion_tokens", None)
+    if completion is None:
+        completion = getattr(raw, "output_tokens", None)
+    total = getattr(raw, "total_tokens", None)
+    cached = getattr(raw, "cached_tokens", None)
+    details = getattr(raw, "prompt_tokens_details", None)
+    if cached is None and details is not None:
+        cached = getattr(details, "cached_tokens", None)
+        if cached is None and isinstance(details, dict):
+            cached = details.get("cached_tokens")
+
+    if all(v is None for v in (prompt, completion, total, cached)):
+        return TokenUsage.unavailable()
+
+    return TokenUsage(
+        prompt_tokens=_as_optional_int(prompt),
+        completion_tokens=_as_optional_int(completion),
+        total_tokens=_as_optional_int(total),
+        cached_tokens=_as_optional_int(cached),
+        source=source,
+    )
+
+
+def _as_optional_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def raw_preview(text: str, *, max_len: int = RAW_PREVIEW_MAX) -> str:

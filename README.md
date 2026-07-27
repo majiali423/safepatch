@@ -206,10 +206,58 @@ Per session under the session `artifacts/` directory:
 | Artifact | Description |
 |---|---|
 | `final.diff` | Unified diff vs import snapshot |
-| `summary.json` | Status, counters, changed files |
+| `summary.json` | Status, counters, changed files, observability card |
 | `trace.jsonl` | Append-only execution events (redacted) |
 | `baseline.log` / `attempt-*.log` | Pytest logs |
 | `hidden.log` / `eval_trace.jsonl` | Present when hidden evaluation runs |
+
+### Session Observability
+
+Each `summary.json` includes an `observability` object with wall-clock
+timestamps, monotonic `duration_ms`, model/tool/pytest counters, and
+provider token usage when the API returns it (otherwise `null` — never
+estimated). SafePatch does not send external telemetry. Details:
+[Session Observability](docs/SESSION_OBSERVABILITY.md).
+
+Example (truncated):
+
+```json
+{
+  "summary_schema_version": 1,
+  "status": "SUCCEEDED",
+  "attempts_used": 1,
+  "observability": {
+    "duration_ms": 12050,
+    "model": {
+      "provider": "openai_compatible",
+      "name": "deepseek-chat",
+      "tool_calling_protocol": "custom_json",
+      "calls": 4,
+      "usage": {
+        "prompt_tokens": 1200,
+        "completion_tokens": 350,
+        "total_tokens": 1550,
+        "cached_tokens": null,
+        "source": "provider",
+        "available": true,
+        "complete": true,
+        "calls_with_usage": 4,
+        "calls_without_usage": 0
+      }
+    },
+    "retries": {
+      "format": 0,
+      "patch_regeneration": 0,
+      "repair_attempts": 1
+    },
+    "tests": {
+      "baseline_runs": 1,
+      "post_apply_runs": 1,
+      "total_runs": 2
+    }
+  }
+}
+```
 
 ## Project Scope
 
@@ -257,6 +305,7 @@ tests/                      Unit / integration / Docker E2E tests
 |---|---|
 | [中文 README](README_zh.md) | Chinese edition of this page |
 | [Architecture](docs/ARCHITECTURE.md) | Modules, workflow, reliability choices |
+| [Session Observability](docs/SESSION_OBSERVABILITY.md) | Per-session counters, tokens, duration |
 | [Patch Applicability](docs/V0.3_PATCH_APPLICABILITY.md) | Preflight / regeneration design |
 | [Demo](docs/DEMO.md) | End-to-end demonstration guide |
 | [Walkthrough](docs/WALKTHROUGH.md) | Conceptual end-to-end explanation |

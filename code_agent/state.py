@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any
+
+# First versioned summary schema that includes the observability card.
+SUMMARY_SCHEMA_VERSION = 1
 
 
 class SessionStatus(str, Enum):
@@ -92,7 +97,7 @@ class PatchProposal:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "PatchProposal":
+    def from_dict(cls, data: dict[str, Any]) -> PatchProposal:
         return cls(
             diagnosis=str(data.get("diagnosis", "")),
             affected_files=list(data.get("affected_files") or []),
@@ -122,6 +127,204 @@ class ApprovalBinding:
             "working_tree_hash": self.working_tree_hash,
             "proposal": self.proposal.to_dict(),
             "validation": validation_dict,
+        }
+
+
+@dataclass
+class TokenUsage:
+    """Provider token usage. None means the provider did not report that field."""
+
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+    cached_tokens: int | None = None
+    source: str = "unavailable"
+
+    @property
+    def available(self) -> bool:
+        return any(
+            v is not None
+            for v in (
+                self.prompt_tokens,
+                self.completion_tokens,
+                self.total_tokens,
+                self.cached_tokens,
+            )
+        )
+
+    def add(self, other: TokenUsage | None) -> TokenUsage:
+        """Accumulate another usage record. Missing fields stay None until seen.
+
+        Does not estimate missing values. Source metadata is refreshed by
+        SessionObservability after each call.
+        """
+        if other is None or not other.available:
+            return self
+        if not self.available:
+            return TokenUsage(
+                prompt_tokens=other.prompt_tokens,
+                completion_tokens=other.completion_tokens,
+                total_tokens=other.total_tokens,
+                cached_tokens=other.cached_tokens,
+                source=other.source,
+            )
+
+        def _sum(a: int | None, b: int | None) -> int | None:
+            if a is None and b is None:
+                return None
+            return (a or 0) + (b or 0)
+
+        return TokenUsage(
+            prompt_tokens=_sum(self.prompt_tokens, other.prompt_tokens),
+            completion_tokens=_sum(self.completion_tokens, other.completion_tokens),
+            total_tokens=_sum(self.total_tokens, other.total_tokens),
+            cached_tokens=_sum(self.cached_tokens, other.cached_tokens),
+            source="provider",
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "prompt_tokens": self.prompt_tokens,
+            "completion_tokens": self.completion_tokens,
+            "total_tokens": self.total_tokens,
+            "cached_tokens": self.cached_tokens,
+            "source": self.source,
+            "available": self.source != "unavailable" and self.available,
+        }
+
+    @classmethod
+    def unavailable(cls) -> TokenUsage:
+        return cls(source="unavailable")
+
+
+@dataclass
+class SessionObservability:
+    """Per-session machine-readable cost/latency counters (local only)."""
+
+    started_at: str | None = None
+    finished_at: str | None = None
+    duration_ms: int | None = None
+    _mono_start: float | None = field(default=None, repr=False)
+    model_calls: int = 0
+    calls_with_usage: int = 0
+    calls_without_usage: int = 0
+    tool_calls_total: int = 0
+    read_tool_calls: int = 0
+    proposal_calls: int = 0
+    baseline_pytest_runs: int = 0
+    post_apply_pytest_runs: int = 0
+    token_usage: TokenUsage = field(default_factory=TokenUsage.unavailable)
+    model_provider: str = "unknown"
+    model_name: str = ""
+    tool_calling_protocol: str = "custom_json"
+    temperature: float | None = None
+
+    def start(
+        self,
+        *,
+        wall_time: Callable[[], float],
+        monotonic: Callable[[], float],
+    ) -> None:
+        self._mono_start = monotonic()
+        self.started_at = datetime.fromtimestamp(
+            wall_time(), tz=timezone.utc
+        ).isoformat()
+        self.finished_at = None
+        self.duration_ms = None
+
+    def finish(
+        self,
+        *,
+        wall_time: Callable[[], float],
+        monotonic: Callable[[], float],
+    ) -> None:
+        self.finished_at = datetime.fromtimestamp(
+            wall_time(), tz=timezone.utc
+        ).isoformat()
+        if self._mono_start is not None:
+            elapsed = max(0.0, monotonic() - self._mono_start)
+            self.duration_ms = round(elapsed * 1000.0)
+        elif self.duration_ms is None:
+            self.duration_ms = 0
+
+    def note_provider_invocation(self) -> None:
+        """Count a provider invocation attempt (before the call returns)."""
+        self.model_calls += 1
+
+    def record_call_usage(self, usage: TokenUsage | None = None) -> None:
+        """Record usage outcome for one already-counted provider invocation."""
+        if usage is not None and usage.available:
+            self.calls_with_usage += 1
+            self.token_usage = self.token_usage.add(usage)
+        else:
+            self.calls_without_usage += 1
+        self._refresh_usage_meta()
+
+    def _refresh_usage_meta(self) -> None:
+        if self.calls_with_usage == 0:
+            self.token_usage.source = "unavailable"
+        elif self.calls_without_usage > 0:
+            self.token_usage.source = "provider_partial"
+        else:
+            self.token_usage.source = "provider"
+
+    @property
+    def usage_complete(self) -> bool:
+        return (
+            self.model_calls > 0
+            and self.calls_with_usage == self.model_calls
+            and self.calls_without_usage == 0
+        )
+
+    def usage_to_dict(self) -> dict[str, Any]:
+        data = self.token_usage.to_dict()
+        data["source"] = self.token_usage.source
+        data["available"] = self.token_usage.source != "unavailable"
+        data["complete"] = self.usage_complete
+        data["calls_with_usage"] = self.calls_with_usage
+        data["calls_without_usage"] = self.calls_without_usage
+        return data
+
+    def to_dict(
+        self,
+        *,
+        format_retries: int,
+        patch_regeneration_retries: int,
+        repair_attempts: int,
+        max_format_retries: int,
+        max_patch_regeneration_retries: int,
+        max_repair_attempts: int,
+    ) -> dict[str, Any]:
+        return {
+            "started_at": self.started_at,
+            "finished_at": self.finished_at,
+            "duration_ms": self.duration_ms if self.duration_ms is not None else 0,
+            "model": {
+                "provider": self.model_provider,
+                "name": self.model_name,
+                "tool_calling_protocol": self.tool_calling_protocol,
+                "temperature": self.temperature,
+                "max_format_retries": max_format_retries,
+                "max_patch_regeneration_retries": max_patch_regeneration_retries,
+                "max_repair_attempts": max_repair_attempts,
+                "calls": self.model_calls,
+                "usage": self.usage_to_dict(),
+            },
+            "tools": {
+                "total_calls": self.tool_calls_total,
+                "read_calls": self.read_tool_calls,
+                "proposal_calls": self.proposal_calls,
+            },
+            "retries": {
+                "format": format_retries,
+                "patch_regeneration": patch_regeneration_retries,
+                "repair_attempts": repair_attempts,
+            },
+            "tests": {
+                "total_runs": self.baseline_pytest_runs + self.post_apply_pytest_runs,
+                "baseline_runs": self.baseline_pytest_runs,
+                "post_apply_runs": self.post_apply_pytest_runs,
+            },
         }
 
 
@@ -171,6 +374,7 @@ class TaskSession:
     patch_apply_failures_after_preflight: int = 0
     first_patch_applicable: bool | None = None
     last_apply_feedback: str = ""
+    observability: SessionObservability = field(default_factory=SessionObservability)
 
     def to_summary(self) -> dict[str, Any]:
         baseline_passed = bool(self.baseline and self.baseline.passed)
@@ -180,6 +384,7 @@ class TaskSession:
             self.patch_preflight_successes / preflight_total if preflight_total else None
         )
         return {
+            "summary_schema_version": SUMMARY_SCHEMA_VERSION,
             "status": self.status.value,
             "attempts_used": self.attempts_used,
             "changed_files": sorted(set(self.changed_files)),
@@ -200,6 +405,14 @@ class TaskSession:
                 self.patch_apply_failures_after_preflight
             ),
             "first_patch_applicable": self.first_patch_applicable,
+            "observability": self.observability.to_dict(
+                format_retries=self.total_format_retries_used,
+                patch_regeneration_retries=self.total_patch_regeneration_retries,
+                repair_attempts=self.attempts_used,
+                max_format_retries=self.max_format_retries,
+                max_patch_regeneration_retries=self.max_patch_regeneration_retries,
+                max_repair_attempts=self.max_attempts,
+            ),
         }
 
 
