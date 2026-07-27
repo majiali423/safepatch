@@ -9,6 +9,8 @@
 仓库导入 → Repo Map / 基线测试 → 工具循环 → 补丁提案 → 策略校验 → **exact preflight** → 人工审批 → Docker pytest → 最多三轮 repair → 导出产物
 
 - v0.3 Patch Applicability：[`docs/V0.3_PATCH_APPLICABILITY.md`](docs/V0.3_PATCH_APPLICABILITY.md)
+- 架构与面试讲解：[`docs/ARCHITECTURE_AND_INTERVIEW.md`](docs/ARCHITECTURE_AND_INTERVIEW.md)
+- 2 分钟 Demo 脚本：[`docs/DEMO_2MIN.md`](docs/DEMO_2MIN.md)
 - v0.2 发布说明：[`docs/V0.2_RELEASE_NOTES.md`](docs/V0.2_RELEASE_NOTES.md)
 - 走读：[`docs/FIRST_VERSION_WALKTHROUGH.md`](docs/FIRST_VERSION_WALKTHROUGH.md)
 
