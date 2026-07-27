@@ -1,5 +1,7 @@
 # SafePatch
 
+[English](README.md) | [中文](README_zh.md)
+
 SafePatch is a reliability-focused code-repair agent for small local
 Python repositories that use pytest.
 
@@ -253,6 +255,7 @@ tests/                      Unit / integration / Docker E2E tests
 
 | Document | Description |
 |---|---|
+| [中文 README](README_zh.md) | Chinese edition of this page |
 | [Architecture](docs/ARCHITECTURE.md) | Modules, workflow, reliability choices |
 | [Patch Applicability](docs/V0.3_PATCH_APPLICABILITY.md) | Preflight / regeneration design |
 | [Demo](docs/DEMO.md) | End-to-end demonstration guide |
