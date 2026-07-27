@@ -1,0 +1,6 @@
+{
+  "task_id": "bench07_merge_ranges",
+  "files": [
+    "ranges.py"
+  ]
+}

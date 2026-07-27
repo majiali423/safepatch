@@ -1,0 +1,35 @@
+--- a/config_load.py
++++ b/config_load.py
+@@ -1,10 +1,12 @@
+ def load_config(text: str) -> dict[str, str]:
+     """Parse key=value lines. Ignore blank lines and # comments."""
+-    # BUG A: does not ignore comments / blank lines correctly (keeps them / no strip)
+     cfg = {}
+     for line in text.splitlines():
+-        if '=' not in line:
++        raw = line.strip()
++        if not raw or raw.startswith('#'):
+             continue
+-        k, v = line.split('=', 1)
+-        cfg[k] = v
++        if '=' not in raw:
++            continue
++        k, v = raw.split('=', 1)
++        cfg[k.strip()] = v.strip()
+     return cfg
+--- a/config_validate.py
++++ b/config_validate.py
+@@ -1,8 +1,10 @@
+ def validate_config(cfg: dict) -> dict:
+     """Require name (non-empty str) and port (int 1..65535). Return normalized cfg."""
+-    # BUG B: does not coerce port to int / wrong range
+-    if 'name' not in cfg or cfg['name'] == '':
++    if 'name' not in cfg or str(cfg['name']).strip() == '':
+         raise ValueError('name required')
+     if 'port' not in cfg:
+         raise ValueError('port required')
+-    return {'name': cfg['name'], 'port': cfg['port']}
++    port = int(cfg['port'])
++    if port < 1 or port > 65535:
++        raise ValueError('port out of range')
++    return {'name': str(cfg['name']).strip(), 'port': port}

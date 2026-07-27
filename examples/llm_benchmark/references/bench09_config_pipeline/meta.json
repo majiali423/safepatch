@@ -1,0 +1,7 @@
+{
+  "task_id": "bench09_config_pipeline",
+  "files": [
+    "config_load.py",
+    "config_validate.py"
+  ]
+}

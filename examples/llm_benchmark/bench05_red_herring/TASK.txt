@@ -1,0 +1,2 @@
+final_price(amount, rate) must return amount after applying discount rate
+(amount * (1 - rate)). Example: final_price(100, 0.1) == 90.

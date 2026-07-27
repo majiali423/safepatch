@@ -1,0 +1,13 @@
+--- a/bounds.py
++++ b/bounds.py
+@@ -1,4 +1,9 @@
+ def clamp(x: float, lo: float, hi: float) -> float:
+     """Clamp x into [lo, hi]. Requires lo <= hi."""
+-    # BUG: returns x unchanged
++    if lo > hi:
++        raise ValueError('lo must be <= hi')
++    if x < lo:
++        return lo
++    if x > hi:
++        return hi
+     return x

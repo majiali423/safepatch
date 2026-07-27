@@ -1,0 +1,1 @@
+Implement clean_row(row): return a shallow cleaned dict. Strip whitespace from string keys and string values; convert empty-string values to None; leave non-string values unchanged. This task may involve multiple defects; fix until all public tests pass (multi-round repair is possible but not required).

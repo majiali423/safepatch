@@ -12,9 +12,8 @@ from rich.syntax import Syntax
 from code_agent.controller import TaskController
 from code_agent.envfile import load_dotenv
 from code_agent.llm import LLMClient
-from code_agent.patching.validator import ValidationResult
 from code_agent.runtime.docker_pytest import DockerPytestRunner
-from code_agent.state import PatchProposal
+from code_agent.state import ApprovalBinding
 
 console = Console()
 
@@ -118,13 +117,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.dry_run_script:
         dry_script = json.loads(args.dry_run_script.read_text(encoding="utf-8"))
 
-    def approve(
-        proposal: PatchProposal, attempt: int, validation: ValidationResult
-    ) -> bool:
+    def approve(binding: ApprovalBinding, attempt: int) -> bool:
         if args.yes:
-            console.print(f"[yellow]Auto-approving patch attempt {attempt}[/yellow]")
+            console.print(
+                f"[yellow]Auto-approving patch attempt {attempt}[/yellow] "
+                f"patch_hash={binding.patch_hash[:12]}… "
+                f"wt_hash={binding.working_tree_hash[:12]}…"
+            )
             return True
-        return _prompt_approval(proposal, attempt, validation)
+        return _prompt_approval(binding, attempt)
 
     def say(msg: str) -> None:
         console.print(msg)
@@ -163,14 +164,20 @@ def main(argv: list[str] | None = None) -> int:
         return 4
     if session.status.value == "MODEL_OUTPUT_INVALID":
         return 5
+    if session.status.value == "PATCH_NOT_APPLICABLE":
+        return 6
+    if session.status.value == "PATCH_BASE_CHANGED":
+        return 7
     return 1
 
 
-def _prompt_approval(
-    proposal: PatchProposal, attempt: int, validation: ValidationResult
-) -> bool:
+def _prompt_approval(binding: ApprovalBinding, attempt: int) -> bool:
+    proposal = binding.proposal
+    validation = binding.validation
     console.print()
     console.rule(f"Patch proposal (attempt {attempt})")
+    console.print(f"[bold]patch_hash[/bold]: {binding.patch_hash}")
+    console.print(f"[bold]working_tree_hash[/bold]: {binding.working_tree_hash}")
     if validation.high_risk:
         console.print("[bold red]HIGH RISK[/bold red]")
         for warning in validation.test_integrity_warnings:

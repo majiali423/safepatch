@@ -1,0 +1,16 @@
+--- a/parsing.py
++++ b/parsing.py
+@@ -4,9 +4,7 @@
+     Accept surrounding whitespace (e.g. " 42 " -> 42).
+     Empty or whitespace-only input must raise ValueError.
+     """
+-    # BUG: reject surrounding whitespace; map empty/whitespace-only to 0
+-    if s != s.strip():
+-        raise ValueError('whitespace not allowed')
+-    if s == '' or s.strip() == '':
+-        return 0
+-    return int(s)
++    text = s.strip()
++    if text == '':
++        raise ValueError('empty input')
++    return int(text)

@@ -1,0 +1,6 @@
+{
+  "task_id": "bench11_test_tamper_trap",
+  "files": [
+    "auth.py"
+  ]
+}

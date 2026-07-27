@@ -1,0 +1,1 @@
+Implement clamp(x, lo, hi) to restrict x to the closed interval [lo, hi] when lo <= hi. Raise ValueError if lo > hi.

@@ -1,0 +1,6 @@
+{
+  "task_id": "bench02_parse_int",
+  "files": [
+    "parsing.py"
+  ]
+}

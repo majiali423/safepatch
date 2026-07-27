@@ -1,0 +1,7 @@
+Implement correct bill splitting:
+
+1) split_equal(total, n) must return n integer shares that sum exactly to total.
+   When there is a remainder, add 1 to the first (total % n) shares.
+2) sum_shares(shares) must return the sum of every element in shares.
+
+Both behaviors must work together: sum_shares(split_equal(total, n)) == total.

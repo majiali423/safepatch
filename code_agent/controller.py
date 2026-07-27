@@ -13,6 +13,8 @@ from code_agent.llm import (
     raw_preview,
 )
 from code_agent.patching.applier import apply_proposal
+from code_agent.patching.hashes import patch_hash, working_tree_hash
+from code_agent.patching.preflight import PatchPreflight, PreflightFailure
 from code_agent.patching.proposal import parse_proposal
 from code_agent.patching.validator import PolicyValidator, ValidationResult
 from code_agent.repository.git_diff import (
@@ -26,6 +28,7 @@ from code_agent.repository.workspace import import_repository
 from code_agent.runtime.docker_pytest import DockerPytestRunner
 from code_agent.state import (
     TERMINAL_STATUSES,
+    ApprovalBinding,
     AttemptRecord,
     PatchProposal,
     SessionStatus,
@@ -34,7 +37,7 @@ from code_agent.state import (
 from code_agent.tools.registry import ToolError, ToolRegistry, execute_tool
 from code_agent.tracing.recorder import TraceRecorder
 
-ApprovalFn = Callable[[PatchProposal, int, ValidationResult], bool]
+ApprovalFn = Callable[[ApprovalBinding, int], bool]
 MessageFn = Callable[[str], None]
 
 
@@ -54,7 +57,7 @@ class TaskController:
     ) -> None:
         self.llm = llm
         self.runner = runner or DockerPytestRunner()
-        self.approve = approve or (lambda _p, _i, _v: True)
+        self.approve = approve or (lambda _binding, _i: True)
         self.say = say or (lambda _m: None)
         self.session_base = session_base
         self.max_analysis_steps = max_analysis_steps
@@ -98,33 +101,29 @@ class TaskController:
                 session.status not in TERMINAL_STATUSES
                 and session.attempts_used < session.max_attempts
             ):
-                proposal, validation = self._analyze_phase(
-                    session, trace, snapshot_root
-                )
-                if proposal is None or validation is None:
+                binding = self._analyze_phase(session, trace, snapshot_root)
+                if session.status in TERMINAL_STATUSES:
+                    break
+                if binding is None:
                     if session.status not in TERMINAL_STATUSES:
                         session.status = SessionStatus.ERROR
                         session.stop_reason = "agent_finished_without_patch"
                         session.last_error = "Agent finished without proposing a patch"
                     break
 
+                proposal = binding.proposal
+                validation = binding.validation
                 session.current_proposal = proposal
-                session.status = SessionStatus.PATCH_PROPOSED
-                trace.emit(
-                    "patch_proposed",
-                    attempt=session.attempts_used + 1,
-                    proposal=proposal.to_dict(),
-                    validation=validation.to_dict(),
-                )
 
                 session.status = SessionStatus.AWAITING_APPROVAL
-                approved = self.approve(
-                    proposal, session.attempts_used + 1, validation
-                )
+                next_attempt_no = session.attempts_used + 1
+                approved = self.approve(binding, next_attempt_no)
                 trace.emit(
                     "approval_decision",
-                    attempt=session.attempts_used + 1,
+                    attempt=next_attempt_no,
                     decision="approve" if approved else "reject",
+                    patch_hash=binding.patch_hash,
+                    working_tree_hash=binding.working_tree_hash,
                     high_risk=validation.high_risk,
                     new_test_files=validation.new_test_files,
                     modified_test_files=validation.modified_test_files,
@@ -134,19 +133,41 @@ class TaskController:
                     session.stop_reason = "user_rejected_patch"
                     session.attempts.append(
                         AttemptRecord(
-                            attempt=session.attempts_used + 1,
+                            attempt=next_attempt_no,
                             proposal=proposal,
                             approved=False,
+                            patch_hash=binding.patch_hash,
+                            working_tree_hash=binding.working_tree_hash,
                         )
                     )
                     break
 
-                session.attempts_used += 1
-                attempt = AttemptRecord(
-                    attempt=session.attempts_used,
-                    proposal=proposal,
-                    approved=True,
-                )
+                # Approval bound to hashes — reject if working tree moved.
+                current_wt = working_tree_hash(session.workspace_root)
+                current_ph = patch_hash(proposal.unified_diff)
+                if (
+                    current_wt != binding.working_tree_hash
+                    or current_ph != binding.patch_hash
+                ):
+                    session.status = SessionStatus.PATCH_BASE_CHANGED
+                    session.stop_reason = "patch_base_changed"
+                    session.last_error = (
+                        "Working tree or patch changed after approval "
+                        f"(bound_wt={binding.working_tree_hash}, now_wt={current_wt}, "
+                        f"bound_patch={binding.patch_hash}, now_patch={current_ph})"
+                    )
+                    session.attempts.append(
+                        AttemptRecord(
+                            attempt=next_attempt_no,
+                            proposal=proposal,
+                            approved=True,
+                            apply_ok=False,
+                            apply_error=session.last_error,
+                            patch_hash=binding.patch_hash,
+                            working_tree_hash=binding.working_tree_hash,
+                        )
+                    )
+                    break
 
                 apply_result = apply_proposal(
                     proposal,
@@ -154,24 +175,55 @@ class TaskController:
                     allow_test_changes=self.allow_test_changes,
                     allow_new_tests=self.allow_new_tests,
                 )
-                attempt.apply_ok = apply_result.ok
-                attempt.apply_error = apply_result.error
                 if not apply_result.ok:
-                    # Spec: restore only if patch apply failed — working copy untouched
-                    # because applier rolls back. Stay in analyzing for next try.
+                    session.patch_apply_failures_after_preflight += 1
+                    err = apply_result.error or "apply failed after preflight"
                     trace.emit(
-                        "patch_applied",
-                        attempt=session.attempts_used,
-                        ok=False,
-                        error=apply_result.error,
+                        "patch_apply_failed_after_preflight",
+                        attempt=next_attempt_no,
+                        error=err,
+                        patch_hash=binding.patch_hash,
+                        working_tree_hash=binding.working_tree_hash,
                     )
-                    self.say(f"Patch apply failed: {apply_result.error}")
-                    session.attempts.append(attempt)
+                    self.say(f"Patch apply failed after preflight: {err}")
+                    session.attempts.append(
+                        AttemptRecord(
+                            attempt=next_attempt_no,
+                            proposal=proposal,
+                            approved=True,
+                            apply_ok=False,
+                            apply_error=err,
+                            patch_hash=binding.patch_hash,
+                            working_tree_hash=binding.working_tree_hash,
+                        )
+                    )
+                    session.last_apply_feedback = (
+                        "PATCH_APPLY_FAILED_AFTER_PREFLIGHT:\n"
+                        f"{err}\n"
+                        "Re-read the target file and propose_patch again with an "
+                        "exact unified diff for the current working tree."
+                    )
+                    if self._regeneration_exhausted(session):
+                        session.status = SessionStatus.PATCH_NOT_APPLICABLE
+                        session.stop_reason = "patch_not_applicable"
+                        session.last_error = err
+                        break
+                    self._consume_regeneration(session, trace, reason=err)
                     session.status = SessionStatus.ANALYZING
-                    if session.attempts_used >= session.max_attempts:
-                        session.status = SessionStatus.FAILED_MAX_ATTEMPTS
-                        session.stop_reason = "max_patch_attempts_reached"
                     continue
+
+                # Repair attempt starts only after successful exact apply.
+                session.attempts_used += 1
+                session.consecutive_patch_regeneration_retries = 0
+                session.last_apply_feedback = ""
+                attempt = AttemptRecord(
+                    attempt=session.attempts_used,
+                    proposal=proposal,
+                    approved=True,
+                    apply_ok=True,
+                    patch_hash=binding.patch_hash,
+                    working_tree_hash=binding.working_tree_hash,
+                )
 
                 session.status = SessionStatus.PATCH_APPLIED
                 session.changed_files = sorted(
@@ -182,6 +234,8 @@ class TaskController:
                     attempt=session.attempts_used,
                     ok=True,
                     files=apply_result.files,
+                    patch_hash=binding.patch_hash,
+                    working_tree_hash=binding.working_tree_hash,
                 )
 
                 session.status = SessionStatus.TESTING
@@ -192,6 +246,8 @@ class TaskController:
                 )
                 attempt.test_result = test_result
                 session.attempts.append(attempt)
+                # Next proposal window gets a fresh regeneration budget.
+                session.consecutive_patch_regeneration_retries = 0
                 trace.emit(
                     "pytest_finished",
                     attempt=session.attempts_used,
@@ -235,6 +291,7 @@ class TaskController:
 
         self._finalize(session, trace, snapshot_root)
         return session
+
 
     def _import_phase(self, session, imported, trace, snapshot_root) -> None:
         session.status = SessionStatus.IMPORTED
@@ -289,7 +346,7 @@ class TaskController:
         session: TaskSession,
         trace: TraceRecorder,
         snapshot_root: Path,
-    ) -> tuple[PatchProposal | None, ValidationResult | None]:
+    ) -> ApprovalBinding | None:
         session.status = SessionStatus.ANALYZING
         session.consecutive_format_retries = 0
         registry = ToolRegistry(session=session, snapshot_root=snapshot_root)
@@ -303,14 +360,14 @@ class TaskController:
                 response = self.llm.complete(messages)
             except ModelOutputError as exc:
                 if self._handle_format_error(session, trace, messages, step, exc):
-                    return None, None
+                    return None
                 continue
             except LLMError as exc:
                 session.status = SessionStatus.ERROR
                 session.stop_reason = "llm_error"
                 session.last_error = str(exc)
                 self.say(str(exc))
-                return None, None
+                return None
 
             # Schema-valid tool call → reset consecutive format retries.
             session.consecutive_format_retries = 0
@@ -330,14 +387,14 @@ class TaskController:
                     )
                 except ModelOutputError as exc:
                     if self._handle_format_error(session, trace, messages, step, exc):
-                        return None, None
+                        return None
                     continue
 
                 validation = self.policy.validate(
                     proposal, session.workspace_root
                 )
                 if not validation.ok:
-                    # Policy failures: feedback loop, NOT format retry.
+                    # Policy failures: feedback loop, NOT format/regeneration retry.
                     err = "Patch validation failed:\n- " + "\n- ".join(
                         validation.errors
                     )
@@ -353,12 +410,29 @@ class TaskController:
                     )
                     messages.append({"role": "user", "content": err})
                     continue
-                return proposal, validation
+
+                session.current_proposal = proposal
+                session.status = SessionStatus.PATCH_PROPOSED
+                trace.emit(
+                    "patch_proposed",
+                    attempt=session.attempts_used + 1,
+                    proposal=proposal.to_dict(),
+                    validation=validation.to_dict(),
+                )
+
+                binding = self._run_preflight(
+                    session, trace, proposal, validation, messages, response.raw_text
+                )
+                if binding is not None:
+                    return binding
+                if session.status in TERMINAL_STATUSES:
+                    return None
+                continue
 
             if response.tool == "finish":
                 reason = str(response.args.get("reason", "finished"))
                 session.stop_reason = reason
-                return None, None
+                return None
 
             try:
                 result_text, _terminal = execute_tool(
@@ -394,7 +468,97 @@ class TaskController:
 
         session.last_error = "Analysis step limit reached without patch"
         session.stop_reason = "analysis_step_limit"
-        return None, None
+        return None
+
+    def _run_preflight(
+        self,
+        session: TaskSession,
+        trace: TraceRecorder,
+        proposal: PatchProposal,
+        validation: ValidationResult,
+        messages: list[dict[str, str]],
+        raw_assistant: str,
+    ) -> ApprovalBinding | None:
+        trace.emit(
+            "patch_preflight_started",
+            attempt=session.attempts_used + 1,
+            patch_hash=patch_hash(proposal.unified_diff),
+            working_tree_hash=working_tree_hash(session.workspace_root),
+        )
+        result = PatchPreflight.run(proposal, session.workspace_root)
+
+        if isinstance(result, PreflightFailure) or not result.ok:
+            failure = result if isinstance(result, PreflightFailure) else PreflightFailure(
+                detail="preflight failed"
+            )
+            session.patch_preflight_failures += 1
+            if session.first_patch_applicable is None:
+                session.first_patch_applicable = False
+            trace.emit(
+                "patch_preflight_failed",
+                attempt=session.attempts_used + 1,
+                **failure.to_dict(),
+                consecutive_patch_regeneration_retries=(
+                    session.consecutive_patch_regeneration_retries
+                ),
+                total_patch_regeneration_retries=session.total_patch_regeneration_retries,
+            )
+            self.say(f"Patch preflight failed: {failure.detail}")
+
+            if self._regeneration_exhausted(session):
+                session.status = SessionStatus.PATCH_NOT_APPLICABLE
+                session.stop_reason = "patch_not_applicable"
+                session.last_error = failure.detail
+                return None
+
+            self._consume_regeneration(session, trace, reason=failure.detail)
+            feedback = failure.feedback_message()
+            messages.append({"role": "assistant", "content": raw_assistant})
+            messages.append({"role": "user", "content": feedback})
+            session.status = SessionStatus.ANALYZING
+            return None
+
+        session.patch_preflight_successes += 1
+        if session.first_patch_applicable is None:
+            session.first_patch_applicable = True
+        session.consecutive_patch_regeneration_retries = 0
+        binding = ApprovalBinding(
+            patch_hash=result.patch_hash,
+            working_tree_hash=result.working_tree_hash,
+            proposal=proposal,
+            validation=validation,
+        )
+        trace.emit(
+            "patch_preflight_succeeded",
+            attempt=session.attempts_used + 1,
+            patch_hash=result.patch_hash,
+            working_tree_hash=result.working_tree_hash,
+            files=result.files,
+        )
+        return binding
+
+    def _regeneration_exhausted(self, session: TaskSession) -> bool:
+        return (
+            session.consecutive_patch_regeneration_retries
+            >= session.max_patch_regeneration_retries
+        )
+
+    def _consume_regeneration(
+        self,
+        session: TaskSession,
+        trace: TraceRecorder,
+        *,
+        reason: str,
+    ) -> None:
+        session.consecutive_patch_regeneration_retries += 1
+        session.total_patch_regeneration_retries += 1
+        trace.emit(
+            "patch_regeneration_requested",
+            retry=session.consecutive_patch_regeneration_retries,
+            max_patch_regeneration_retries=session.max_patch_regeneration_retries,
+            total_patch_regeneration_retries=session.total_patch_regeneration_retries,
+            reason=reason[:2000],
+        )
 
     def _handle_format_error(
         self,
@@ -470,6 +634,12 @@ class TaskController:
                 b.traceback_summary[:3000],
                 "",
             ]
+        if session.last_apply_feedback:
+            parts += [
+                "Previous exact-apply failure after approval:",
+                session.last_apply_feedback[:3000],
+                "",
+            ]
         if session.attempts:
             last = session.attempts[-1]
             parts.append(f"Attempts used: {session.attempts_used}/{session.max_attempts}")
@@ -494,7 +664,8 @@ class TaskController:
             ]
         parts.append(
             "Investigate with tools, then propose_patch. "
-            "Incremental patches apply on the current working copy."
+            "Incremental patches apply on the current working copy. "
+            "If a patch fails preflight, read_file the target again before regenerating."
         )
         return "\n".join(parts)
 
@@ -535,6 +706,8 @@ class TaskController:
             SessionStatus.TEST_ENVIRONMENT_ERROR,
             SessionStatus.TEST_TIMEOUT,
             SessionStatus.MODEL_OUTPUT_INVALID,
+            SessionStatus.PATCH_NOT_APPLICABLE,
+            SessionStatus.PATCH_BASE_CHANGED,
         }:
             summary["error"] = session.last_error
         (artifacts / "summary.json").write_text(

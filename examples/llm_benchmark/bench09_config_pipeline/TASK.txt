@@ -1,0 +1,4 @@
+Implement a tiny config pipeline:
+1) load_config(text): parse key=value lines; ignore blank lines and # comments; strip keys/values.
+2) validate_config(cfg): require non-empty name; coerce port to int in 1..65535; raise ValueError otherwise; return {"name", "port"}.
+Both stages must work together.

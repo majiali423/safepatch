@@ -1,0 +1,26 @@
+--- a/dates.py
++++ b/dates.py
+@@ -4,9 +4,19 @@
+     Accept YYYY-MM-DD or YYYY/M/D (month/day may be 1-2 digits).
+     Raise ValueError for invalid formats or impossible calendar dates.
+     """
+-    # BUG: only accepts '/', does not zero-pad
+-    parts = s.split('/')
++    import datetime as _dt
++    text = s.strip()
++    if '/' in text:
++        parts = text.split('/')
++    elif '-' in text:
++        parts = text.split('-')
++    else:
++        raise ValueError('bad format')
+     if len(parts) != 3:
+         raise ValueError('bad format')
+-    y, m, d = parts
+-    return f"{y}-{m}-{d}"
++    try:
++        y, m, d = (int(parts[0]), int(parts[1]), int(parts[2]))
++        dt = _dt.date(y, m, d)
++    except Exception as exc:
++        raise ValueError('invalid date') from exc
++    return f"{dt.year:04d}-{dt.month:02d}-{dt.day:02d}"

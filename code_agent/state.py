@@ -17,6 +17,8 @@ class SessionStatus(str, Enum):
     TESTING = "TESTING"
     SUCCEEDED = "SUCCEEDED"
     FAILED_MAX_ATTEMPTS = "FAILED_MAX_ATTEMPTS"
+    PATCH_NOT_APPLICABLE = "PATCH_NOT_APPLICABLE"
+    PATCH_BASE_CHANGED = "PATCH_BASE_CHANGED"
     REJECTED = "REJECTED"
     TEST_ENVIRONMENT_ERROR = "TEST_ENVIRONMENT_ERROR"
     TEST_TIMEOUT = "TEST_TIMEOUT"
@@ -27,6 +29,8 @@ class SessionStatus(str, Enum):
 TERMINAL_STATUSES = {
     SessionStatus.SUCCEEDED,
     SessionStatus.FAILED_MAX_ATTEMPTS,
+    SessionStatus.PATCH_NOT_APPLICABLE,
+    SessionStatus.PATCH_BASE_CHANGED,
     SessionStatus.REJECTED,
     SessionStatus.TEST_ENVIRONMENT_ERROR,
     SessionStatus.TEST_TIMEOUT,
@@ -100,6 +104,28 @@ class PatchProposal:
 
 
 @dataclass
+class ApprovalBinding:
+    """Approval is bound to exact patch + working-tree content hashes."""
+
+    patch_hash: str
+    working_tree_hash: str
+    proposal: PatchProposal
+    validation: Any  # ValidationResult; typed loosely to avoid import cycles
+
+    def to_dict(self) -> dict[str, Any]:
+        validation = self.validation
+        validation_dict = (
+            validation.to_dict() if hasattr(validation, "to_dict") else {}
+        )
+        return {
+            "patch_hash": self.patch_hash,
+            "working_tree_hash": self.working_tree_hash,
+            "proposal": self.proposal.to_dict(),
+            "validation": validation_dict,
+        }
+
+
+@dataclass
 class AttemptRecord:
     attempt: int
     proposal: PatchProposal | None = None
@@ -107,6 +133,8 @@ class AttemptRecord:
     apply_ok: bool | None = None
     apply_error: str | None = None
     test_result: TestResult | None = None
+    patch_hash: str | None = None
+    working_tree_hash: str | None = None
 
 
 @dataclass
@@ -134,10 +162,23 @@ class TaskSession:
     max_format_retries: int = 2
     consecutive_format_retries: int = 0
     total_format_retries_used: int = 0
+    # Patch regeneration (preflight mismatch); does NOT count toward attempts_used.
+    max_patch_regeneration_retries: int = 2
+    consecutive_patch_regeneration_retries: int = 0
+    total_patch_regeneration_retries: int = 0
+    patch_preflight_failures: int = 0
+    patch_preflight_successes: int = 0
+    patch_apply_failures_after_preflight: int = 0
+    first_patch_applicable: bool | None = None
+    last_apply_feedback: str = ""
 
     def to_summary(self) -> dict[str, Any]:
         baseline_passed = bool(self.baseline and self.baseline.passed)
         final_passed = self.status == SessionStatus.SUCCEEDED
+        preflight_total = self.patch_preflight_successes + self.patch_preflight_failures
+        preflight_rate = (
+            self.patch_preflight_successes / preflight_total if preflight_total else None
+        )
         return {
             "status": self.status.value,
             "attempts_used": self.attempts_used,
@@ -148,6 +189,17 @@ class TaskSession:
             or _default_stop_reason(self.status),
             "consecutive_format_retries": self.consecutive_format_retries,
             "total_format_retries_used": self.total_format_retries_used,
+            "consecutive_patch_regeneration_retries": (
+                self.consecutive_patch_regeneration_retries
+            ),
+            "total_patch_regeneration_retries": self.total_patch_regeneration_retries,
+            "patch_preflight_failures": self.patch_preflight_failures,
+            "patch_preflight_successes": self.patch_preflight_successes,
+            "patch_preflight_success_rate": preflight_rate,
+            "patch_apply_failures_after_preflight": (
+                self.patch_apply_failures_after_preflight
+            ),
+            "first_patch_applicable": self.first_patch_applicable,
         }
 
 
@@ -155,6 +207,8 @@ def _default_stop_reason(status: SessionStatus) -> str:
     mapping = {
         SessionStatus.SUCCEEDED: "all_tests_passed",
         SessionStatus.FAILED_MAX_ATTEMPTS: "max_patch_attempts_reached",
+        SessionStatus.PATCH_NOT_APPLICABLE: "patch_not_applicable",
+        SessionStatus.PATCH_BASE_CHANGED: "patch_base_changed",
         SessionStatus.REJECTED: "user_rejected_patch",
         SessionStatus.TEST_ENVIRONMENT_ERROR: "test_environment_error",
         SessionStatus.TEST_TIMEOUT: "pytest_timeout",

@@ -1,0 +1,20 @@
+--- a/csvkit.py
++++ b/csvkit.py
+@@ -5,13 +5,12 @@
+     - convert empty-string values to None
+     - leave non-strings unchanged
+     """
+-    # Multi-defect buggy version (observe repair loops; rounds not guaranteed):
+-    # 1) does not strip keys
+-    # 2) does not convert "" to None
+     out = {}
+     for k, v in row.items():
++        key = k.strip() if isinstance(k, str) else k
+         if isinstance(v, str):
+-            out[k] = v.strip()
++            text = v.strip()
++            out[key] = None if text == '' else text
+         else:
+-            out[k] = v
++            out[key] = v
+     return out

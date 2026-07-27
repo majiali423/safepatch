@@ -16,6 +16,7 @@ venv/
 .code_agent_sessions/
 examples/eval_tasks/results/
 examples/eval_tasks/**/latest/
+examples/llm_benchmark/results/
 
 # Caches
 .pytest_cache/

@@ -1,0 +1,4 @@
+Implement slugify(title) for URL slugs:
+lowercase; whitespace to '-'; remove characters outside [a-z0-9-];
+collapse repeated '-'; strip leading/trailing '-'; empty input yields "".
+Example: slugify("Hello World") == "hello-world".

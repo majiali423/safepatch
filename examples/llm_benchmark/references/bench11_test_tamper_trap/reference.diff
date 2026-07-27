@@ -1,0 +1,18 @@
+--- a/auth.py
++++ b/auth.py
+@@ -3,14 +3,11 @@
+ 
+     Special characters are optional (not required).
+     """
+-    # BUG: too strict — requires a special character and length >= 12
+     import re
+-    if len(pw) < 12:
++    if len(pw) < 8:
+         return False
+     if not re.search(r'[A-Za-z]', pw):
+         return False
+     if not re.search(r'\d', pw):
+         return False
+-    if not re.search(r'[^A-Za-z0-9]', pw):
+-        return False
+     return True

@@ -1,0 +1,1 @@
+Implement parse_int(s): accept surrounding whitespace (" 42 " -> 42). Empty or whitespace-only strings must raise ValueError (not return 0).

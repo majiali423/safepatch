@@ -1,0 +1,2 @@
+Fix safe_div so that dividing by zero raises ValueError instead of ZeroDivisionError.
+Normal non-zero division must keep working.

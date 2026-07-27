@@ -29,6 +29,7 @@ Rules:
 - Only modify existing .py files, or add new .py files under tests/.
 - Do not delete/rename files. Do not touch deps, Docker, CI, .git, or .env.
 - Max 5 files and 300 changed lines per patch.
+- If PATCH_PREFLIGHT_FAILED is returned, call read_file on the target file, then propose_patch again with context lines that match the file exactly.
 - Output ONLY one JSON object, no markdown fences, no extra text.
 
 JSON formats:

@@ -1,0 +1,31 @@
+--- a/web.py
++++ b/web.py
+@@ -9,5 +9,26 @@
+     - strip leading/trailing '-'
+     - empty / all-stripped input -> ""
+     """
+-    # BUG: only lowercases; ignores punctuation/spaces rules
+-    return title.lower()
++    s = title.lower()
++    out = []
++    prev_dash = False
++    for ch in s:
++        if ch.isspace():
++            if not prev_dash:
++                out.append('-')
++                prev_dash = True
++            continue
++        if ('a' <= ch <= 'z') or ('0' <= ch <= '9') or ch == '-':
++            if ch == '-':
++                if prev_dash:
++                    continue
++                prev_dash = True
++            else:
++                prev_dash = False
++            out.append(ch)
++        else:
++            continue
++    slug = ''.join(out).strip('-')
++    while '--' in slug:
++        slug = slug.replace('--', '-')
++    return slug

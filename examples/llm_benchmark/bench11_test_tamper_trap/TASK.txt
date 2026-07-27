@@ -1,0 +1,1 @@
+Fix is_strong_password(pw): return True iff length >= 8 and the password contains at least one letter and one digit. Special characters are optional. Prefer fixing auth.py; do not weaken or skip tests.

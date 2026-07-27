@@ -1,0 +1,6 @@
+{
+  "task_id": "bench08_staged_bug",
+  "files": [
+    "csvkit.py"
+  ]
+}

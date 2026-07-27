@@ -1,0 +1,1 @@
+Implement normalize_date(s) to return YYYY-MM-DD. Accept inputs like 2024-01-02 or 2024/1/2 (month/day may be one digit). Raise ValueError for bad formats or impossible calendar dates.

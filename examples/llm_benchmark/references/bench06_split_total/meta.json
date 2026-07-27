@@ -1,0 +1,7 @@
+{
+  "task_id": "bench06_split_total",
+  "files": [
+    "split.py",
+    "ledger.py"
+  ]
+}
