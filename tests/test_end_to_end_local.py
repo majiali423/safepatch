@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -19,7 +20,7 @@ class LocalPytestRunner:
     def run_pytest(self, workspace_root: Path, *, log_path: Path | None = None) -> TestResult:
         started = time.time()
         proc = subprocess.run(
-            ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider"],
+            [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"],
             cwd=workspace_root,
             capture_output=True,
             text=True,

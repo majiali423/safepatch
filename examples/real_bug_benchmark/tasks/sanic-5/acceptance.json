@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "task_id": "sanic-5",
+  "accepted": true,
+  "verified_at": "2026-07-28T10:07:17.4654745Z",
+  "repository": {
+    "url": "https://github.com/sanic-org/sanic",
+    "buggy_commit": "e3a27c2cc485d57aa1ff87d9f69098e4ab12727e",
+    "fixed_commit": "b63c06c75a54752d7f3115d3c635580db44b8399",
+    "files": 156,
+    "bytes": 564476
+  },
+  "image": {
+    "tag": "safepatch-bench-sanic:local",
+    "digest": "sha256:81f2288b754def4e98b59db19e32d7eca8de684090984917945b7facf83082c1",
+    "base_digest": "sha256:1d52838af602b4b5a831beb13a0e4d073280665ea7be7f69ce2382f29c5a613f"
+  },
+  "sandbox": {"network": "none", "cpus": 1, "memory_mib": 512, "pids_limit": 128, "container_user": "agent"},
+  "buggy_result": {"exit_code": 1, "outcome": "expected_failure", "signature": "KeyError: 'sanic.root'"},
+  "fixed_result": {"exit_code": 0, "outcome": "passed", "tests_passed": 1}
+}

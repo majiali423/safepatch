@@ -1,5 +1,7 @@
 # SafePatch
 
+[![CI](https://github.com/majiali423/code-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/majiali423/code-agent/actions/workflows/ci.yml)
+
 [English](README.md) | 中文
 
 SafePatch 是面向小型本地 Python（pytest）仓库的、以可靠性为优先的代码修复 Agent。
@@ -7,6 +9,12 @@ SafePatch 是面向小型本地 Python（pytest）仓库的、以可靠性为优
 给定仓库路径与缺陷/变更描述后，SafePatch 会创建隔离的工作副本，构建基于 AST 的轻量仓库地图，运行基线测试，并通过一组受限的只读工具让模型检查仓库。
 
 模型提出的 unified diff 会先经过仓库与测试完整性策略校验，再经精确补丁预检（exact patch preflight），通过后才提交人工审批。获批变更在禁用网络、资源受限的 Docker 容器中执行测试。每次会话导出最终 diff、公开/隐藏评测日志、结构化指标，以及只追加的执行 trace。
+
+## 确定性演示
+
+![SafePatch 确定性代码修复演示](docs/assets/safepatch-demo.gif)
+
+该回放无需 API Key，但会经过真实的隔离导入、策略校验、精确预检、审批、补丁应用、Docker pytest 与产物导出路径。演示从失败测试开始，在一次 repair attempt 后以 `SUCCEEDED` 结束。复现命令见[CLI 用法](#cli-用法)。
 
 ## 概述
 
@@ -134,6 +142,25 @@ SafePatch v0.3 在冻结的 12 题基准上评测，覆盖单文件修复、多�
 - [Full12 × 3 报告](examples/llm_benchmark/FULL12_V03_X3_REPORT.md)
 - [Mismatch 回放（机制证明）](examples/llm_benchmark/REPLAY_V03_REPORT.md)
 - 产品标签 `v0.3.1`（历史评测冻结于 `v0.3.0` / `benchmark-v0.3-deepseek-full12-x3`）
+
+### 真实仓库基准
+
+一个冻结的五题 [BugsInPy](https://github.com/soarsmu/bugsinpy) 集合用于补充微型任务基准。
+五个冻结环境均已通过验收。每题都在完整
+buggy 仓库上因预期原因无法通过上游公开回归测试，而 fixed revision 在同一套
+锁定依赖、断网 Docker 环境中通过。
+
+V4-Flash 的 15 次实验中，开启 preflight 通过 14/15，关闭后通过 9/15；
+V4-Pro 的 6 次分层小样本通过 6/6。这些是小规模、非配对的工程证据，不作为
+通用模型排行榜。复现所有已验收环境：
+
+```bash
+python examples/real_bug_benchmark/verify.py
+```
+
+详见[验收报告](examples/real_bug_benchmark/ACCEPTANCE_REPORT.md)、
+[基准设计](examples/real_bug_benchmark/DESIGN.md)与
+[模型评测报告](examples/real_bug_benchmark/MODEL_EVAL_REPORT.md)。
 
 ## 快速开始
 
@@ -270,6 +297,7 @@ examples/buggy_calculator/  最小演示仓库
 examples/dry_run_*.json     确定性工具脚本
 examples/eval_tasks/        隐藏评测样例
 examples/llm_benchmark/     冻结基准资产与报告
+examples/real_bug_benchmark/ 真实仓库基准环境
 tests/                      单元 / 集成 / Docker E2E 测试
 ```
 
@@ -281,6 +309,7 @@ tests/                      单元 / 集成 / Docker E2E 测试
 | [Session Observability](docs/SESSION_OBSERVABILITY.md) | 会话计数、token、耗时 |
 | [Patch Applicability](docs/V0.3_PATCH_APPLICABILITY.md) | 预检 / regeneration 设计 |
 | [Demo](docs/DEMO.md) | 端到端演示指南 |
+| [真实 Bug 基准](examples/real_bug_benchmark/DESIGN.md) | 冻结选题与环境验收协议 |
 | [Walkthrough](docs/WALKTHROUGH.md) | 概念性端到端说明 |
 | [v0.2 Release Notes](docs/V0.2_RELEASE_NOTES.md) | 既有发布说明 |
 | [Acceptance Report](docs/ACCEPTANCE_REPORT.md) | 验证层次（历史） |

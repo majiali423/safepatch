@@ -67,6 +67,7 @@ class TaskController:
         allow_test_changes: bool = False,
         allow_new_tests: bool = True,
         policy: PolicyValidator | None = None,
+        preflight_enabled: bool = True,
         wall_time: Callable[[], float] | None = None,
         monotonic: Callable[[], float] | None = None,
     ) -> None:
@@ -82,6 +83,7 @@ class TaskController:
             allow_test_changes=allow_test_changes,
             allow_new_tests=allow_new_tests,
         )
+        self.preflight_enabled = preflight_enabled
         self._wall_time = wall_time or time.time
         self._monotonic = monotonic or time.perf_counter
 
@@ -163,10 +165,7 @@ class TaskController:
                 # Approval bound to hashes — reject if working tree moved.
                 current_wt = working_tree_hash(session.workspace_root)
                 current_ph = patch_hash(proposal.unified_diff)
-                if (
-                    current_wt != binding.working_tree_hash
-                    or current_ph != binding.patch_hash
-                ):
+                if current_wt != binding.working_tree_hash or current_ph != binding.patch_hash:
                     session.status = SessionStatus.PATCH_BASE_CHANGED
                     session.stop_reason = "patch_base_changed"
                     session.last_error = (
@@ -194,8 +193,17 @@ class TaskController:
                     allow_new_tests=self.allow_new_tests,
                 )
                 if not apply_result.ok:
-                    session.patch_apply_failures_after_preflight += 1
-                    err = apply_result.error or "apply failed after preflight"
+                    if self.preflight_enabled:
+                        session.patch_apply_failures_after_preflight += 1
+                        event = "patch_apply_failed_after_preflight"
+                        feedback_label = "PATCH_APPLY_FAILED_AFTER_PREFLIGHT"
+                        default_error = "apply failed after preflight"
+                    else:
+                        session.patch_apply_failures_without_preflight += 1
+                        event = "patch_apply_failed_without_preflight"
+                        feedback_label = "PATCH_APPLY_FAILED"
+                        default_error = "patch apply failed"
+                    err = apply_result.error or default_error
                     error_kind = classify_apply_error_kind(
                         error_kind=apply_result.error_kind,
                         error=err,
@@ -204,7 +212,7 @@ class TaskController:
                     if rollback_succeeded is None:
                         rollback_succeeded = True
                     trace.emit(
-                        "patch_apply_failed_after_preflight",
+                        event,
                         attempt=next_attempt_no,
                         error=err,
                         error_kind=error_kind,
@@ -213,9 +221,7 @@ class TaskController:
                         patch_hash=binding.patch_hash,
                         working_tree_hash=binding.working_tree_hash,
                     )
-                    self.say(
-                        f"Patch apply failed after preflight ({error_kind}): {err}"
-                    )
+                    self.say(f"Patch apply failed ({error_kind}): {err}")
                     session.attempts.append(
                         AttemptRecord(
                             attempt=next_attempt_no,
@@ -242,7 +248,7 @@ class TaskController:
                         break
 
                     session.last_apply_feedback = (
-                        "PATCH_APPLY_FAILED_AFTER_PREFLIGHT:\n"
+                        f"{feedback_label}:\n"
                         f"error_kind={error_kind}\n"
                         f"{err}\n"
                         "Re-read the target file and propose_patch again with an "
@@ -352,13 +358,9 @@ class TaskController:
 
     def _finish_observability(self, session: TaskSession) -> None:
         if session.observability.finished_at is None:
-            session.observability.finish(
-                wall_time=self._wall_time, monotonic=self._monotonic
-            )
+            session.observability.finish(wall_time=self._wall_time, monotonic=self._monotonic)
 
-    def _record_call_usage(
-        self, session: TaskSession, usage: TokenUsage | None
-    ) -> None:
+    def _record_call_usage(self, session: TaskSession, usage: TokenUsage | None) -> None:
         session.observability.record_call_usage(usage)
 
     def _import_phase(self, session, imported, trace, snapshot_root) -> None:
@@ -406,8 +408,7 @@ class TaskController:
             return
         session.status = SessionStatus.BASELINE_TESTED
         self.say(
-            f"Baseline finished: exit={result.exit_code}, "
-            f"failed={result.failed_tests or 'none'}"
+            f"Baseline finished: exit={result.exit_code}, failed={result.failed_tests or 'none'}"
         )
 
     def _analyze_phase(
@@ -419,9 +420,7 @@ class TaskController:
         session.status = SessionStatus.ANALYZING
         session.consecutive_format_retries = 0
         registry = ToolRegistry(session=session, snapshot_root=snapshot_root)
-        messages = [
-            {"role": "user", "content": self._build_user_prompt(session, snapshot_root)}
-        ]
+        messages = [{"role": "user", "content": self._build_user_prompt(session, snapshot_root)}]
 
         for step in range(self.max_analysis_steps):
             trace.emit("model_request", step=step, messages_tail=messages[-1])
@@ -457,23 +456,17 @@ class TaskController:
 
             if response.tool == "propose_patch":
                 try:
-                    proposal = parse_proposal(
-                        response.args, raw_text=response.raw_text
-                    )
+                    proposal = parse_proposal(response.args, raw_text=response.raw_text)
                 except ModelOutputError as exc:
                     if self._handle_format_error(session, trace, messages, step, exc):
                         return None
                     continue
 
                 session.observability.proposal_calls += 1
-                validation = self.policy.validate(
-                    proposal, session.workspace_root
-                )
+                validation = self.policy.validate(proposal, session.workspace_root)
                 if not validation.ok:
                     # Policy failures: feedback loop, NOT format/regeneration retry.
-                    err = "Patch validation failed:\n- " + "\n- ".join(
-                        validation.errors
-                    )
+                    err = "Patch validation failed:\n- " + "\n- ".join(validation.errors)
                     trace.emit(
                         "tool_result",
                         tool="propose_patch",
@@ -481,9 +474,7 @@ class TaskController:
                         error=err,
                         validation=validation.to_dict(),
                     )
-                    messages.append(
-                        {"role": "assistant", "content": response.raw_text}
-                    )
+                    messages.append({"role": "assistant", "content": response.raw_text})
                     messages.append({"role": "user", "content": err})
                     continue
 
@@ -513,9 +504,7 @@ class TaskController:
             if response.tool in _READ_LIKE_TOOLS:
                 session.observability.read_tool_calls += 1
             try:
-                result_text, _terminal = execute_tool(
-                    registry, response.tool, response.args
-                )
+                result_text, _terminal = execute_tool(registry, response.tool, response.args)
                 trace.emit(
                     "tool_call",
                     tool=response.tool,
@@ -557,6 +546,21 @@ class TaskController:
         messages: list[dict[str, str]],
         raw_assistant: str,
     ) -> ApprovalBinding | None:
+        if not self.preflight_enabled:
+            binding = ApprovalBinding(
+                patch_hash=patch_hash(proposal.unified_diff),
+                working_tree_hash=working_tree_hash(session.workspace_root),
+                proposal=proposal,
+                validation=validation,
+            )
+            trace.emit(
+                "patch_preflight_bypassed",
+                attempt=session.attempts_used + 1,
+                patch_hash=binding.patch_hash,
+                working_tree_hash=binding.working_tree_hash,
+            )
+            return binding
+
         trace.emit(
             "patch_preflight_started",
             attempt=session.attempts_used + 1,
@@ -566,8 +570,10 @@ class TaskController:
         result = PatchPreflight.run(proposal, session.workspace_root)
 
         if isinstance(result, PreflightFailure) or not result.ok:
-            failure = result if isinstance(result, PreflightFailure) else PreflightFailure(
-                detail="preflight failed"
+            failure = (
+                result
+                if isinstance(result, PreflightFailure)
+                else PreflightFailure(detail="preflight failed")
             )
             session.patch_preflight_failures += 1
             if session.first_patch_applicable is None:
@@ -618,8 +624,7 @@ class TaskController:
 
     def _regeneration_exhausted(self, session: TaskSession) -> bool:
         return (
-            session.consecutive_patch_regeneration_retries
-            >= session.max_patch_regeneration_retries
+            session.consecutive_patch_regeneration_retries >= session.max_patch_regeneration_retries
         )
 
     def _consume_regeneration(

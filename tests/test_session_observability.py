@@ -680,6 +680,21 @@ def test_normalize_token_usage_zero_vs_missing():
     assert missing.available is False
 
 
+def test_normalize_token_usage_deepseek_cache_hit_tokens():
+    usage = normalize_token_usage(
+        {
+            "prompt_tokens": 120,
+            "completion_tokens": 30,
+            "total_tokens": 150,
+            "prompt_cache_hit_tokens": 80,
+            "prompt_cache_miss_tokens": 40,
+        }
+    )
+
+    assert usage.prompt_tokens == 120
+    assert usage.cached_tokens == 80
+
+
 def test_failed_max_attempts_pytest_matches_repair(tmp_path: Path):
     # After the first apply, working copy has `return 2`; later patches must
     # match that baseline or preflight/regen will fire instead of repair.

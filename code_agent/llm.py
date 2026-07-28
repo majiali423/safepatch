@@ -218,6 +218,8 @@ def normalize_token_usage(raw: Any, *, source: str = "provider") -> TokenUsage:
         completion = raw.get("completion_tokens", raw.get("output_tokens"))
         total = raw.get("total_tokens")
         cached = raw.get("cached_tokens")
+        if cached is None:
+            cached = raw.get("prompt_cache_hit_tokens")
         details = raw.get("prompt_tokens_details")
         if cached is None and isinstance(details, dict):
             cached = details.get("cached_tokens")
@@ -239,6 +241,8 @@ def normalize_token_usage(raw: Any, *, source: str = "provider") -> TokenUsage:
         completion = getattr(raw, "output_tokens", None)
     total = getattr(raw, "total_tokens", None)
     cached = getattr(raw, "cached_tokens", None)
+    if cached is None:
+        cached = getattr(raw, "prompt_cache_hit_tokens", None)
     details = getattr(raw, "prompt_tokens_details", None)
     if cached is None and details is not None:
         cached = getattr(details, "cached_tokens", None)

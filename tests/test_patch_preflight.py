@@ -28,9 +28,7 @@ class FailThenPassRunner:
                 failed_tests=["tests/test_mod.py::test_f"],
             )
         else:
-            result = TestResult(
-                exit_code=0, stdout="1 passed", stderr="", duration_sec=0.01
-            )
+            result = TestResult(exit_code=0, stdout="1 passed", stderr="", duration_sec=0.01)
         if log_path:
             log_path.parent.mkdir(parents=True, exist_ok=True)
             log_path.write_text(result.stdout, encoding="utf-8")
@@ -44,9 +42,7 @@ def _mini_repo(tmp_path: Path) -> Path:
     tests = repo / "tests"
     tests.mkdir()
     (tests / "test_mod.py").write_text(
-        "from mod import f\n"
-        "def test_f():\n"
-        "    assert f() == 2\n",
+        "from mod import f\ndef test_f():\n    assert f() == 2\n",
         encoding="utf-8",
     )
     (repo / "pytest.ini").write_text("[pytest]\npythonpath = .\n", encoding="utf-8")
@@ -123,6 +119,31 @@ def test_mismatch_then_good_patch_one_repair_attempt(tmp_path: Path):
     assert "patch_applied" in events
 
 
+def test_preflight_ablation_applies_then_regenerates(tmp_path: Path):
+    repo = _mini_repo(tmp_path)
+    controller = TaskController(
+        llm=LLMClient(dry_run_script=[_mismatch_patch(), _good_patch()]),
+        runner=FailThenPassRunner(),  # type: ignore[arg-type]
+        approve=lambda _binding, _attempt: True,
+        say=lambda _m: None,
+        session_base=tmp_path / "sessions",
+        preflight_enabled=False,
+    )
+
+    session = controller.run(repo, "make f return 2")
+
+    assert session.status == SessionStatus.SUCCEEDED
+    assert session.attempts_used == 1
+    assert session.patch_preflight_failures == 0
+    assert session.patch_preflight_successes == 0
+    assert session.patch_apply_failures_after_preflight == 0
+    assert session.patch_apply_failures_without_preflight == 1
+    events = [event["event"] for event in _load_trace(session)]
+    assert events.count("patch_preflight_bypassed") == 2
+    assert "patch_apply_failed_without_preflight" in events
+    assert "patch_preflight_started" not in events
+
+
 def test_three_mismatches_patch_not_applicable(tmp_path: Path):
     """2. three mismatch patches → PATCH_NOT_APPLICABLE, repair_attempts=0."""
     repo = _mini_repo(tmp_path)
@@ -188,9 +209,7 @@ def test_new_patch_revalidates_policy_and_reapproves(tmp_path: Path):
         },
     }
     controller = TaskController(
-        llm=LLMClient(
-            dry_run_script=[_mismatch_patch(), bad_test_patch, _good_patch()]
-        ),
+        llm=LLMClient(dry_run_script=[_mismatch_patch(), bad_test_patch, _good_patch()]),
         runner=FailThenPassRunner(),  # type: ignore[arg-type]
         approve=approve,
         say=lambda _m: None,
@@ -238,17 +257,9 @@ def test_preflight_and_apply_share_matcher(tmp_path: Path):
     """6. preflight and apply use the same hunk_engine matcher."""
     repo = _mini_repo(tmp_path)
     original = (repo / "mod.py").read_text(encoding="utf-8")
-    body = (
-        "--- a/mod.py\n"
-        "+++ b/mod.py\n"
-        "@@ -1,2 +1,2 @@\n"
-        " def f():\n"
-        "-    return 1\n"
-        "+    return 2\n"
-    )
+    body = "--- a/mod.py\n+++ b/mod.py\n@@ -1,2 +1,2 @@\n def f():\n-    return 1\n+    return 2\n"
     # Same matcher symbol used by both preflight and applier modules.
-    from code_agent.patching import applier, preflight
-    from code_agent.patching import hunk_engine
+    from code_agent.patching import applier, hunk_engine, preflight
 
     assert preflight.apply_hunks_to_text is hunk_engine.apply_hunks_to_text
     assert applier.apply_hunks_to_text is hunk_engine.apply_hunks_to_text

@@ -119,9 +119,7 @@ class ApprovalBinding:
 
     def to_dict(self) -> dict[str, Any]:
         validation = self.validation
-        validation_dict = (
-            validation.to_dict() if hasattr(validation, "to_dict") else {}
-        )
+        validation_dict = validation.to_dict() if hasattr(validation, "to_dict") else {}
         return {
             "patch_hash": self.patch_hash,
             "working_tree_hash": self.working_tree_hash,
@@ -226,9 +224,7 @@ class SessionObservability:
         monotonic: Callable[[], float],
     ) -> None:
         self._mono_start = monotonic()
-        self.started_at = datetime.fromtimestamp(
-            wall_time(), tz=timezone.utc
-        ).isoformat()
+        self.started_at = datetime.fromtimestamp(wall_time(), tz=timezone.utc).isoformat()
         self.finished_at = None
         self.duration_ms = None
 
@@ -238,9 +234,7 @@ class SessionObservability:
         wall_time: Callable[[], float],
         monotonic: Callable[[], float],
     ) -> None:
-        self.finished_at = datetime.fromtimestamp(
-            wall_time(), tz=timezone.utc
-        ).isoformat()
+        self.finished_at = datetime.fromtimestamp(wall_time(), tz=timezone.utc).isoformat()
         if self._mono_start is not None:
             elapsed = max(0.0, monotonic() - self._mono_start)
             self.duration_ms = round(elapsed * 1000.0)
@@ -372,6 +366,7 @@ class TaskSession:
     patch_preflight_failures: int = 0
     patch_preflight_successes: int = 0
     patch_apply_failures_after_preflight: int = 0
+    patch_apply_failures_without_preflight: int = 0
     first_patch_applicable: bool | None = None
     last_apply_feedback: str = ""
     observability: SessionObservability = field(default_factory=SessionObservability)
@@ -390,20 +385,16 @@ class TaskSession:
             "changed_files": sorted(set(self.changed_files)),
             "baseline_tests_passed": baseline_passed,
             "final_tests_passed": final_passed,
-            "stop_reason": self.stop_reason
-            or _default_stop_reason(self.status),
+            "stop_reason": self.stop_reason or _default_stop_reason(self.status),
             "consecutive_format_retries": self.consecutive_format_retries,
             "total_format_retries_used": self.total_format_retries_used,
-            "consecutive_patch_regeneration_retries": (
-                self.consecutive_patch_regeneration_retries
-            ),
+            "consecutive_patch_regeneration_retries": (self.consecutive_patch_regeneration_retries),
             "total_patch_regeneration_retries": self.total_patch_regeneration_retries,
             "patch_preflight_failures": self.patch_preflight_failures,
             "patch_preflight_successes": self.patch_preflight_successes,
             "patch_preflight_success_rate": preflight_rate,
-            "patch_apply_failures_after_preflight": (
-                self.patch_apply_failures_after_preflight
-            ),
+            "patch_apply_failures_after_preflight": (self.patch_apply_failures_after_preflight),
+            "patch_apply_failures_without_preflight": (self.patch_apply_failures_without_preflight),
             "first_patch_applicable": self.first_patch_applicable,
             "observability": self.observability.to_dict(
                 format_retries=self.total_format_retries_used,

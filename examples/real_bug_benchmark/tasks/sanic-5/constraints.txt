@@ -1,0 +1,12 @@
+aiofiles==0.5.0
+attrs==25.3.0
+httptools==0.1.1
+more-itertools==10.5.0
+multidict==4.7.6
+packaging==26.2
+pluggy==0.13.1
+py==1.11.0
+pytest==5.4.3
+ujson==2.0.3
+wcwidth==0.8.2
+websockets==6.0

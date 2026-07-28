@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import sys
 from pathlib import Path
 
 import pytest
@@ -403,7 +404,7 @@ def test_leak_prevention_end_to_end_dry_run(tmp_path: Path):
             import subprocess
 
             proc = subprocess.run(
-                ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider"],
+                [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"],
                 cwd=workspace_root,
                 capture_output=True,
                 text=True,

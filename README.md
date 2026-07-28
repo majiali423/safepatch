@@ -1,5 +1,7 @@
 # SafePatch
 
+[![CI](https://github.com/majiali423/code-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/majiali423/code-agent/actions/workflows/ci.yml)
+
 [English](README.md) | [中文](README_zh.md)
 
 SafePatch is a reliability-focused code-repair agent for small local
@@ -16,6 +18,15 @@ for approval before they are applied. Approved changes are tested in a
 network-disabled, resource-limited Docker container. Each session
 exports the final diff, public and hidden evaluation logs, structured
 metrics, and an append-only execution trace.
+
+## Deterministic Demo
+
+![SafePatch deterministic repair demo](docs/assets/safepatch-demo.gif)
+
+The replay uses no API key, but exercises the real isolation, policy,
+preflight, approval, exact-apply, Docker pytest, and artifact paths. It
+starts from a failing test and finishes `SUCCEEDED` after one repair
+attempt. Reproduce it with the command under [CLI Usage](#cli-usage).
 
 ## Overview
 
@@ -154,6 +165,26 @@ Evidence:
 - [Full12 × 3 report](examples/llm_benchmark/FULL12_V03_X3_REPORT.md)
 - [Mismatch replay (mechanism proof)](examples/llm_benchmark/REPLAY_V03_REPORT.md)
 - Product tag `v0.3.1` (historical Full12 evidence frozen at `v0.3.0` / `benchmark-v0.3-deepseek-full12-x3`)
+
+### Real-repository benchmark
+
+A frozen five-task [BugsInPy](https://github.com/soarsmu/bugsinpy) set
+complements the micro-suite. All five frozen environments are accepted. For each, the full buggy
+repository fails the public upstream regression test for the expected reason,
+while the fixed revision passes in the same pinned, offline Docker image.
+
+In the 15-run V4-Flash study, SafePatch passed 14/15 tasks with preflight and
+9/15 without it. The six-run stratified V4-Pro check passed 6/6. These are small,
+non-paired samples and are reported as engineering evidence, not a general model
+leaderboard. Reproduce every accepted environment with:
+
+```bash
+python examples/real_bug_benchmark/verify.py
+```
+
+See the [acceptance report](examples/real_bug_benchmark/ACCEPTANCE_REPORT.md),
+[benchmark design](examples/real_bug_benchmark/DESIGN.md), and
+[model evaluation report](examples/real_bug_benchmark/MODEL_EVAL_REPORT.md).
 
 ## Quick Start
 
@@ -296,6 +327,7 @@ examples/buggy_calculator/  Minimal demo repository
 examples/dry_run_*.json     Deterministic tool scripts
 examples/eval_tasks/        Hidden-eval samples
 examples/llm_benchmark/     Frozen benchmark assets and reports
+examples/real_bug_benchmark/ Real-repository benchmark environments
 tests/                      Unit / integration / Docker E2E tests
 ```
 
@@ -308,6 +340,7 @@ tests/                      Unit / integration / Docker E2E tests
 | [Session Observability](docs/SESSION_OBSERVABILITY.md) | Per-session counters, tokens, duration |
 | [Patch Applicability](docs/V0.3_PATCH_APPLICABILITY.md) | Preflight / regeneration design |
 | [Demo](docs/DEMO.md) | End-to-end demonstration guide |
+| [Real-bug Benchmark](examples/real_bug_benchmark/DESIGN.md) | Frozen selection and environment acceptance protocol |
 | [Walkthrough](docs/WALKTHROUGH.md) | Conceptual end-to-end explanation |
 | [v0.2 Release Notes](docs/V0.2_RELEASE_NOTES.md) | Prior release notes |
 | [Acceptance Report](docs/ACCEPTANCE_REPORT.md) | Verification layers (historical) |
