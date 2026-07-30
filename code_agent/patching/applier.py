@@ -6,6 +6,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+from code_agent.patching.hashes import file_revision
 from code_agent.patching.hunk_engine import (
     HunkMatchError,
     apply_hunks_to_text,
@@ -29,6 +30,8 @@ RECOVERABLE_APPLY_ERROR_KINDS = frozenset(
         "deletion_mismatch",
         "no_hunks",
         "overlapping_hunk",
+        "ambiguous_context",
+        "stale_file_revision",
     }
 )
 
@@ -41,6 +44,8 @@ class ApplyResult:
     error_kind: str | None = None
     target_file: str | None = None
     rollback_succeeded: bool | None = None
+    relocations: list[dict[str, int | str]] | None = None
+    line_no: int | None = None
 
 
 class PatchApplier:
@@ -130,9 +135,31 @@ def apply_proposal(
     backups: dict[Path, str | None] = {}
     created: list[Path] = []
     current_file: str | None = None
+    relocations: list[dict[str, int | str]] = []
 
     try:
         file_diffs = split_file_diffs(proposal.unified_diff)
+        for file_path, body in file_diffs:
+            if is_new_file(body):
+                continue
+            expected_revision = proposal.base_revisions.get(file_path)
+            if expected_revision is None:
+                continue
+            target = (workspace_root / file_path).resolve()
+            if not target.is_file():
+                continue
+            current_revision = file_revision(target)
+            if current_revision != expected_revision:
+                return ApplyResult(
+                    ok=False,
+                    error=(
+                        f"STALE_FILE_REVISION for {file_path}: expected "
+                        f"{expected_revision}, current {current_revision}"
+                    ),
+                    error_kind="stale_file_revision",
+                    target_file=file_path,
+                    rollback_succeeded=True,
+                )
         for file_path, body in file_diffs:
             current_file = file_path
             target = (workspace_root / file_path).resolve()
@@ -152,32 +179,43 @@ def apply_proposal(
                     raise RuntimeError(f"Missing file for patch: {file_path}")
                 original = _read_text_raw(target)
                 backups[target] = original
-                patched = apply_hunks_to_text(original, body, file_path)
+                file_relocations: list[dict[str, int]] = []
+                patched = apply_hunks_to_text(
+                    original,
+                    body,
+                    file_path,
+                    relocations=file_relocations,
+                )
+                relocations.extend(
+                    {"file": file_path, **relocation}
+                    for relocation in file_relocations
+                )
                 _write_text_raw(target, patched)
 
-        return ApplyResult(ok=True, files=validation.files)
+        return ApplyResult(ok=True, files=validation.files, relocations=relocations)
     except Exception as exc:  # noqa: BLE001
         rollback_ok = _safe_rollback(backups, created)
-        kind, target = _classify_exception(exc, current_file)
+        kind, target, line_no = _classify_exception(exc, current_file)
         return ApplyResult(
             ok=False,
             error=str(exc),
             error_kind=kind,
             target_file=target,
             rollback_succeeded=rollback_ok,
+            line_no=line_no,
         )
 
 
 def _classify_exception(
     exc: BaseException, current_file: str | None
-) -> tuple[str, str | None]:
+) -> tuple[str, str | None, int | None]:
     if isinstance(exc, HunkMatchError):
-        return exc.error_kind, exc.target_file or current_file
+        return exc.error_kind, exc.target_file or current_file, exc.line_no
     if isinstance(exc, PermissionError):
-        return "permission_error", current_file
+        return "permission_error", current_file, None
     if isinstance(exc, OSError):
-        return "io_error", current_file
-    return "internal_error", current_file
+        return "io_error", current_file, None
+    return "internal_error", current_file, None
 
 
 def _read_text_raw(path: Path) -> str:

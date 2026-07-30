@@ -17,5 +17,6 @@
   },
   "sandbox": {"network": "none", "cpus": 1, "memory_mib": 512, "pids_limit": 128, "container_user": "agent", "process_hierarchy": "sh -> pytest"},
   "buggy_result": {"exit_code": 1, "outcome": "expected_failure", "signature": "git push --force != git push --force-with-lease", "tests_failed": 3},
-  "fixed_result": {"exit_code": 0, "outcome": "passed", "tests_passed": 3}
+  "fixed_result": {"exit_code": 0, "outcome": "passed", "tests_passed": 3},
+  "hidden_result": {"buggy_exit_code": 1, "fixed_exit_code": 0, "outcome": "expected_failure_then_pass"}
 }

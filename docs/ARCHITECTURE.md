@@ -88,6 +88,7 @@ See [Session Observability](SESSION_OBSERVABILITY.md).
 | `PATCH_BASE_CHANGED` | Working tree hash changed after approval |
 | `REJECTED` | Human rejected an applicable proposal |
 | `MODEL_OUTPUT_INVALID` | Format retries exhausted |
+| `READ_BUDGET_EXHAUSTED` | Synthesis ended through repeated no-progress actions, evidence hard violation, or the synthesis step limit |
 | `TEST_ENVIRONMENT_ERROR` / `TEST_TIMEOUT` | Docker / pytest infrastructure failure |
 
 Product `SessionStatus` is distinct from evaluator `EvalStatus` used for

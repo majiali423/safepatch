@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from code_agent.patching.hashes import file_revision
 from code_agent.repository.workspace import WorkspaceError, safe_resolve
 
 MAX_LINES_PER_READ = 120
@@ -38,5 +39,8 @@ def read_file(
     end_line = min(end_line, len(lines))
     chunk = lines[start_line - 1 : end_line]
     numbered = [f"{i:>4}|{line}" for i, line in enumerate(chunk, start=start_line)]
-    header = f"# {path} lines {start_line}-{end_line} of {len(lines)}"
+    header = (
+        f"# {path} lines {start_line}-{end_line} of {len(lines)} "
+        f"revision={file_revision(target)}"
+    )
     return header + "\n" + "\n".join(numbered)

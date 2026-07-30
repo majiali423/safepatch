@@ -1,0 +1,28 @@
+diff --git a/safepatch_hidden/test_hidden_regression.py b/safepatch_hidden/test_hidden_regression.py
+new file mode 100644
+--- /dev/null
++++ b/safepatch_hidden/test_hidden_regression.py
+@@ -0,0 +1,23 @@
++from tornado.escape import json_decode
++from tornado.test.httpserver_test import HTTPServerRawTest, read_stream_body
++
++
++class HiddenHTTPServerRawTest(HTTPServerRawTest):
++    def test_chunked_request_mixed_case(self):
++        self.stream.write(
++            b"""\
++POST /echo HTTP/1.1
++Transfer-Encoding: cHuNkEd
++Content-Type: application/x-www-form-urlencoded
++
++4
++foo=
++3
++bar
++0
++
++""".replace(b"\n", b"\r\n")
++        )
++        read_stream_body(self.stream, self.stop)
++        headers, response = self.wait()
++        self.assertEqual(json_decode(response), {"foo": ["bar"]})

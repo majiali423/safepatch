@@ -7,6 +7,16 @@
   "task_python": "3.8.20",
   "prompt": "Sanic's default logging configuration should use its own root logger namespace so changing the Sanic root level does not collide with Python's root logger.",
   "public_test_patch": "public_test.patch",
+  "hidden_test_patch": "hidden_test.patch",
+  "hidden_test_command": [
+    "python",
+    "-m",
+    "pytest",
+    "safepatch_hidden/test_hidden_regression.py::test_sanic_logger_does_not_reuse_named_root_logger",
+    "-q",
+    "-s",
+    "--disable-warnings"
+  ],
   "test_command": ["python", "-m", "pytest", "tests/test_logging.py::test_logging_modified_root_logger_config", "-q", "--disable-warnings"],
   "failure_signature": "KeyError: 'sanic.root'"
 }

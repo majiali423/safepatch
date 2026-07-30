@@ -1,0 +1,27 @@
+diff --git a/safepatch_hidden/test_hidden_regression.py b/safepatch_hidden/test_hidden_regression.py
+new file mode 100644
+--- /dev/null
++++ b/safepatch_hidden/test_hidden_regression.py
+@@ -0,0 +1,22 @@
++import pytest
++
++from thefuck.conf import settings
++from thefuck.shells.bash import Bash
++from thefuck.shells.zsh import Zsh
++
++
++@pytest.mark.parametrize('shell_class', [Bash, Zsh])
++def test_custom_alias_scopes_variables_inside_alias(shell_class, monkeypatch):
++    monkeypatch.setattr(settings, 'alter_history', False)
++
++    alias = shell_class().app_alias('fixit')
++    declaration = "alias fixit='"
++
++    assert alias.startswith(declaration)
++    body = alias[len(declaration):]
++    assert body.startswith(
++        'TF_CMD=$(TF_ALIAS=fixit PYTHONIOENCODING=utf-8 '
++        'TF_SHELL_ALIASES=$(alias) thefuck '
++    )
++    assert alias.count('TF_ALIAS=fixit') == 1
++    assert alias.endswith("eval $TF_CMD'")

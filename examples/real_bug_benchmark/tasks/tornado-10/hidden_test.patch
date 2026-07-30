@@ -1,0 +1,33 @@
+diff --git a/safepatch_hidden/test_hidden_regression.py b/safepatch_hidden/test_hidden_regression.py
+new file mode 100644
+--- /dev/null
++++ b/safepatch_hidden/test_hidden_regression.py
+@@ -0,0 +1,28 @@
++from tornado.testing import gen_test
++from tornado.test.websocket_test import RenderMessageHandler, WebSocketTest
++
++
++class HiddenWebSocketLifecycleTest(WebSocketTest):
++    @gen_test
++    def test_render_state_lives_until_close_then_releases(self):
++        instances = []
++        original = RenderMessageHandler.on_message
++
++        def record_instance(handler, message):
++            instances.append(handler)
++            return original(handler, message)
++
++        RenderMessageHandler.on_message = record_instance
++        try:
++            ws = yield self.ws_connect('/render')
++            ws.write_message('hidden')
++            response = yield ws.read_message()
++
++            self.assertEqual(response, '<b>hidden</b>')
++            self.assertEqual(len(instances), 1)
++            self.assertIsNotNone(instances[0].ui)
++
++            yield self.close(ws)
++            self.assertIsNone(instances[0].ui)
++        finally:
++            RenderMessageHandler.on_message = original

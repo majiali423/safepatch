@@ -17,5 +17,6 @@
   },
   "sandbox": {"network": "none", "cpus": 1, "memory_mib": 512, "pids_limit": 128, "container_user": "agent"},
   "buggy_result": {"exit_code": 1, "outcome": "expected_failure", "signature": "TypeError: 'NoneType' object cannot be interpreted as an integer"},
-  "fixed_result": {"exit_code": 0, "outcome": "passed", "tests_passed": 1}
+  "fixed_result": {"exit_code": 0, "outcome": "passed", "tests_passed": 1},
+  "hidden_result": {"buggy_exit_code": 1, "fixed_exit_code": 0, "outcome": "expected_failure_then_pass"}
 }

@@ -70,6 +70,13 @@ def _good_patch() -> dict:
     }
 
 
+def _required_read() -> dict:
+    return {
+        "tool": "read_file",
+        "args": {"path": "mod.py", "start_line": 1, "end_line": 2},
+    }
+
+
 class _BaselineFailRunner:
     def preflight(self):
         return True, "ok"
@@ -119,7 +126,14 @@ def test_cli_exit_code_6_patch_not_applicable(tmp_path: Path, monkeypatch):
     repo = _mini_repo(tmp_path)
     session_base = tmp_path / "sess"
     cli_mod, buf = _patch_cli(
-        monkeypatch, script=[_mismatch_patch(), _mismatch_patch(), _mismatch_patch()]
+        monkeypatch,
+        script=[
+            _mismatch_patch(),
+            _required_read(),
+            _mismatch_patch(),
+            _required_read(),
+            _mismatch_patch(),
+        ],
     )
     code = cli_mod.main(
         [
@@ -176,6 +190,29 @@ def test_cli_exit_code_7_patch_base_changed(tmp_path: Path, monkeypatch):
     out = buf.getvalue()
     assert "patch_base_changed" in out
     assert "PATCH_BASE_CHANGED" in out
+
+
+def test_cli_exit_code_8_read_budget_exhausted(tmp_path: Path, monkeypatch):
+    repo = _mini_repo(tmp_path)
+    session_base = tmp_path / "sess"
+    cli_mod, buf = _patch_cli(monkeypatch, script=[_required_read() for _ in range(14)])
+
+    code = cli_mod.main(
+        [
+            str(repo),
+            "make f return 2",
+            "--yes",
+            "--session-base",
+            str(session_base),
+        ]
+    )
+
+    assert code == 8
+    summary, _artifacts = _find_summary(session_base)
+    assert summary["status"] == "READ_BUDGET_EXHAUSTED"
+    assert summary["stop_reason"] == "synthesis_no_progress"
+    assert summary["read_budget"]["total_violations"] == 2
+    assert "READ_BUDGET_EXHAUSTED" in buf.getvalue()
 
 
 def test_cli_exit_code_5_model_output_invalid_no_regression(tmp_path: Path, monkeypatch):

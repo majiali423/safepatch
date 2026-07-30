@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "task_id": "thefuck-16",
+  "accepted": true,
+  "verified_at": "2026-07-29T16:23:22.2112827Z",
+  "repository": {
+    "url": "https://github.com/nvbn/thefuck",
+    "buggy_commit": "d92765d5df6607cb2f2fb67cee7b63f64ac7aa6b",
+    "fixed_commit": "bb5f6bb705a3b217eb682f3357ec6bbb709555c1",
+    "files": 226,
+    "bytes": 1016520
+  },
+  "image": {
+    "tag": "safepatch-bench-thefuck-16:local",
+    "digest": "sha256:ea3afd69b67ad762a73d71676b6859d5d59780e645429322f028d2398315459a",
+    "base_digest": "sha256:b53f496ca43e5af6994f8e316cf03af31050bf7944e0e4a308ad86c001cf028b"
+  },
+  "sandbox": {
+    "network": "none",
+    "cpus": 1,
+    "memory_mib": 512,
+    "pids_limit": 128,
+    "container_user": "agent",
+    "process_hierarchy": "sh -> pytest"
+  },
+  "buggy_result": {
+    "exit_code": 1,
+    "outcome": "expected_failure",
+    "signature": "assert \"alias fuck='TF_CMD=$(TF_ALIAS\" in alias",
+    "tests_failed": 2
+  },
+  "fixed_result": {
+    "exit_code": 0,
+    "outcome": "passed",
+    "tests_passed": 2
+  },
+  "hidden_result": {
+    "buggy_exit_code": 1,
+    "fixed_exit_code": 0,
+    "outcome": "expected_failure_then_pass"
+  }
+}

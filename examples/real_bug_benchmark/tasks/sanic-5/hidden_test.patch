@@ -1,0 +1,22 @@
+diff --git a/safepatch_hidden/test_hidden_regression.py b/safepatch_hidden/test_hidden_regression.py
+new file mode 100644
+--- /dev/null
++++ b/safepatch_hidden/test_hidden_regression.py
+@@ -0,0 +1,17 @@
++import logging
++
++from sanic import Sanic
++
++
++def test_sanic_logger_does_not_reuse_named_root_logger():
++    named_root = logging.getLogger("root")
++    sanic_root = logging.getLogger("sanic.root")
++    named_root.handlers[:] = []
++    sanic_root.handlers[:] = []
++
++    Sanic("hidden_logging_regression")
++
++    assert named_root.handlers == []
++    assert sanic_root is not named_root
++    assert sanic_root.handlers
++    assert sanic_root.getEffectiveLevel() == logging.INFO

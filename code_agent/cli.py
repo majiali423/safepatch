@@ -167,6 +167,8 @@ def main(argv: list[str] | None = None) -> int:
         return 6
     if session.status.value == "PATCH_BASE_CHANGED":
         return 7
+    if session.status.value == "READ_BUDGET_EXHAUSTED":
+        return 8
     return 1
 
 

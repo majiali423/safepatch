@@ -1,8 +1,8 @@
 # Real-bug benchmark design
 
-Status: **candidate freeze with five accepted environments**. A candidate is not
-counted as runnable or scored until its buggy and fixed revisions pass the
-environment acceptance gate.
+Status: **seven environments accepted, including two natural multi-file tasks,
+with hidden gates on the original five**. A candidate is not counted as runnable or
+scored until its buggy and fixed revisions pass the environment acceptance gate.
 
 ## Goal
 
@@ -34,6 +34,22 @@ commits, tests, measured sizes, and exclusion reasons are recorded in
 8. The original exposing test is public. Supplemental hidden tests may be
    authored from the documented bug semantics, but must pass on the upstream
    fixed revision and remain outside the Agent workspace.
+9. A multi-file task qualifies only when the upstream reference fix changes at
+   least two product files. Test, documentation, and formatting-only files do
+   not manufacture multi-file status.
+
+## Hidden-test protocol
+
+The five accepted primary tasks each have a benchmark-owned
+`hidden_test.patch`. During environment verification it is applied to both
+buggy and fixed revisions: buggy must fail and fixed must pass. During a model
+run, the Agent sees only the public test. The runner injects the hidden patch
+after the Agent has finished, executes a separate command, and records public,
+hidden, and overall outcomes.
+
+The hidden tests cover semantic variants rather than copying the public case:
+path-like append behavior, mixed-case transfer encoding, explicit-total
+precedence, root-logger isolation, and complex force-push arguments.
 
 ## Candidate states
 
@@ -75,6 +91,8 @@ not be added to the product image.
 | primary | `tqdm-3` | tqdm | undefined boolean semantics | accepted |
 | primary | `sanic-5` | Sanic | root logger namespace collision | accepted |
 | primary | `thefuck-19` | thefuck | unsafe force-push suggestion | accepted |
+| multi-file | `tornado-10` | Tornado | deferred WebSocket cycle cleanup across handler layers | accepted |
+| multi-file | `thefuck-16` | thefuck | alias variable scoping across shell adapters | accepted |
 | reserve | `tqdm-4` | tqdm | scaling with unknown total | exact revision recheck required |
 | reserve | `tqdm-8` | tqdm | wrong user bar variables | exact revision recheck required |
 
@@ -94,13 +112,17 @@ committed copy of the upstream repository:
   constraints.txt
   TASK.md
   public_test.patch
+  hidden_test.patch       # accepted primary tasks
   acceptance.json
 ```
 
 Run `python examples/real_bug_benchmark/verify.py` to rebuild and verify all
 accepted environments. The verifier clones upstream revisions into a temporary
-directory, applies only the public regression-test patch to the buggy revision,
-and runs both revisions with Docker networking disabled.
+directory, applies the public regression-test patch only to the buggy revision,
+then applies hidden tests to both revisions and runs them with Docker networking
+disabled. All seven accepted tasks are selected by default. The two multi-file
+tasks have immutable image digests and acceptance records but no historical
+model score yet.
 
 The `thefuck-19` command intentionally starts pytest through `sh`. That
 historical revision discovers its shell through the parent process; launching

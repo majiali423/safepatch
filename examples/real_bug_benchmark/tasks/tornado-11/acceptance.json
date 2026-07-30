@@ -31,5 +31,10 @@
     "exit_code": 0,
     "outcome": "passed",
     "tests_passed": 1
+  },
+  "hidden_result": {
+    "buggy_exit_code": 1,
+    "fixed_exit_code": 0,
+    "outcome": "expected_failure_then_pass"
   }
 }

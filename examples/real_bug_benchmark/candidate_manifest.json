@@ -30,6 +30,7 @@
       "measured_repo_files": 17,
       "measured_repo_bytes": 27524,
       "status": "accepted",
+      "hidden_test_status": "accepted",
       "acceptance_file": "tasks/pysnooper-3/acceptance.json",
       "environment_note": "Pinned Python 3.8 image accepted: buggy fails with the expected NameError and fixed passes."
     },
@@ -46,6 +47,7 @@
       "measured_repo_files": 298,
       "measured_repo_bytes": 1902704,
       "status": "accepted",
+      "hidden_test_status": "accepted",
       "acceptance_file": "tasks/tornado-11/acceptance.json",
       "environment_note": "Pinned Python 3.7 image accepted: buggy loses the uppercase chunked body and fixed passes."
     },
@@ -62,6 +64,7 @@
       "measured_repo_files": 65,
       "measured_repo_bytes": 1197404,
       "status": "accepted",
+      "hidden_test_status": "accepted",
       "acceptance_file": "tasks/tqdm-3/acceptance.json",
       "environment_note": "Pinned Python 3.6 image accepted: buggy raises the expected bool TypeError and fixed passes."
     },
@@ -78,6 +81,7 @@
       "measured_repo_files": 156,
       "measured_repo_bytes": 564476,
       "status": "accepted",
+      "hidden_test_status": "accepted",
       "acceptance_file": "tasks/sanic-5/acceptance.json",
       "environment_note": "Pinned Python 3.8 image accepted: buggy lacks sanic.root and fixed passes."
     },
@@ -94,6 +98,7 @@
       "measured_repo_files": 201,
       "measured_repo_bytes": 991820,
       "status": "accepted",
+      "hidden_test_status": "accepted",
       "acceptance_file": "tasks/thefuck-19/acceptance.json",
       "environment_note": "Pinned Python 3.7 image accepted; test command retains the historical shell parent process required by this revision."
     }
@@ -118,6 +123,52 @@
       "patch_files": 1,
       "changed_lines": 2,
       "status": "size_and_environment_recheck_required"
+    }
+  ],
+  "multifile_candidates": [
+    {
+      "id": "tornado-10",
+      "project": "tornado",
+      "task_python": "3.7.0",
+      "upstream": "https://github.com/tornadoweb/tornado",
+      "buggy_commit": "ecd8968c5135b810cd607b5902dda2cd32122b39",
+      "fixed_commit": "5931d913b4ea250891a0b582f1f8b2901b868c79",
+      "upstream_test": "tornado/test/websocket_test.py::WebSocketTest::test_render_message",
+      "product_patch_files": [
+        "tornado/web.py",
+        "tornado/websocket.py"
+      ],
+      "patch_files": 2,
+      "changed_lines": 13,
+      "measured_repo_files": 308,
+      "measured_repo_bytes": 1995774,
+      "status": "accepted",
+      "hidden_test_status": "accepted",
+      "acceptance_file": "tasks/tornado-10/acceptance.json",
+      "environment_note": "Natural two-file lifecycle fix. Pinned Docker gate accepted: buggy fails and fixed passes."
+    },
+    {
+      "id": "thefuck-16",
+      "project": "thefuck",
+      "task_python": "3.7.0",
+      "upstream": "https://github.com/nvbn/thefuck",
+      "buggy_commit": "d92765d5df6607cb2f2fb67cee7b63f64ac7aa6b",
+      "fixed_commit": "bb5f6bb705a3b217eb682f3357ec6bbb709555c1",
+      "upstream_test": "tests/shells/test_bash.py::TestBash::test_app_alias_variables_correctly_set;tests/shells/test_zsh.py::TestZsh::test_app_alias_variables_correctly_set",
+      "product_patch_files": [
+        "thefuck/shells/bash.py",
+        "thefuck/shells/fish.py",
+        "thefuck/shells/zsh.py",
+        "thefuck/types.py"
+      ],
+      "patch_files": 4,
+      "changed_lines": 18,
+      "measured_repo_files": 226,
+      "measured_repo_bytes": 1016520,
+      "status": "accepted",
+      "hidden_test_status": "accepted",
+      "acceptance_file": "tasks/thefuck-16/acceptance.json",
+      "environment_note": "Natural cross-shell fix. Pinned Docker gate accepted: both buggy shell cases fail and fixed passes."
     }
   ],
   "excluded_examples": [

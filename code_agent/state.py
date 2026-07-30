@@ -28,7 +28,15 @@ class SessionStatus(str, Enum):
     TEST_ENVIRONMENT_ERROR = "TEST_ENVIRONMENT_ERROR"
     TEST_TIMEOUT = "TEST_TIMEOUT"
     MODEL_OUTPUT_INVALID = "MODEL_OUTPUT_INVALID"
+    READ_BUDGET_EXHAUSTED = "READ_BUDGET_EXHAUSTED"
     ERROR = "ERROR"
+
+
+class AnalysisPhase(str, Enum):
+    EXPLORE = "EXPLORE"
+    SYNTHESIZE = "SYNTHESIZE"
+    PROPOSE = "PROPOSE"
+    FINISH = "FINISH"
 
 
 TERMINAL_STATUSES = {
@@ -40,6 +48,7 @@ TERMINAL_STATUSES = {
     SessionStatus.TEST_ENVIRONMENT_ERROR,
     SessionStatus.TEST_TIMEOUT,
     SessionStatus.MODEL_OUTPUT_INVALID,
+    SessionStatus.READ_BUDGET_EXHAUSTED,
     SessionStatus.ERROR,
 }
 
@@ -85,6 +94,7 @@ class PatchProposal:
     expected_behavior: str
     risk_notes: str
     tests_to_run: list[str]
+    base_revisions: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -94,6 +104,7 @@ class PatchProposal:
             "expected_behavior": self.expected_behavior,
             "risk_notes": self.risk_notes,
             "tests_to_run": self.tests_to_run,
+            "base_revisions": self.base_revisions,
         }
 
     @classmethod
@@ -105,6 +116,10 @@ class PatchProposal:
             expected_behavior=str(data.get("expected_behavior", "")),
             risk_notes=str(data.get("risk_notes", "")),
             tests_to_run=list(data.get("tests_to_run") or []),
+            base_revisions={
+                str(path): str(revision)
+                for path, revision in (data.get("base_revisions") or {}).items()
+            },
         )
 
 
@@ -346,7 +361,21 @@ class TaskSession:
     max_attempts: int = 3
     attempts_used: int = 0
     read_actions_used: int = 0
+    exploration_read_actions_used: int = 0
     max_read_actions: int = 12
+    analysis_phase: AnalysisPhase = AnalysisPhase.EXPLORE
+    evidence_requests_used: int = 0
+    max_evidence_requests: int = 2
+    evidence_parameter_corrections_used: int = 0
+    max_evidence_parameter_corrections: int = 1
+    consecutive_no_progress_actions: int = 0
+    total_no_progress_actions: int = 0
+    hard_policy_violations: int = 0
+    required_recovery_reads_used: int = 0
+    successful_read_ranges: dict[str, list[tuple[int, int]]] = field(
+        default_factory=dict,
+        repr=False,
+    )
     repo_map_text: str = ""
     repo_map_data: dict[str, Any] = field(default_factory=dict)
     baseline: TestResult | None = None
@@ -369,6 +398,11 @@ class TaskSession:
     patch_apply_failures_without_preflight: int = 0
     first_patch_applicable: bool | None = None
     last_apply_feedback: str = ""
+    # A context-stale file must be re-read over this inclusive range before
+    # another proposal is accepted for preflight.
+    required_reads: dict[str, tuple[int, int]] = field(default_factory=dict)
+    consecutive_read_budget_violations: int = 0
+    total_read_budget_violations: int = 0
     observability: SessionObservability = field(default_factory=SessionObservability)
 
     def to_summary(self) -> dict[str, Any]:
@@ -396,6 +430,34 @@ class TaskSession:
             "patch_apply_failures_after_preflight": (self.patch_apply_failures_after_preflight),
             "patch_apply_failures_without_preflight": (self.patch_apply_failures_without_preflight),
             "first_patch_applicable": self.first_patch_applicable,
+            "analysis": {
+                "phase": self.analysis_phase.value,
+                "evidence_requests_used": self.evidence_requests_used,
+                "max_evidence_requests": self.max_evidence_requests,
+                "parameter_corrections_used": (
+                    self.evidence_parameter_corrections_used
+                ),
+                "max_parameter_corrections": (
+                    self.max_evidence_parameter_corrections
+                ),
+                "consecutive_no_progress_actions": (
+                    self.consecutive_no_progress_actions
+                ),
+                "total_no_progress_actions": self.total_no_progress_actions,
+                "hard_policy_violations": self.hard_policy_violations,
+            },
+            "read_budget": {
+                "used": self.exploration_read_actions_used,
+                "max": self.max_read_actions,
+                "remaining": max(
+                    self.max_read_actions - self.exploration_read_actions_used,
+                    0,
+                ),
+                "total_read_actions": self.read_actions_used,
+                "required_recovery_reads": self.required_recovery_reads_used,
+                "consecutive_violations": self.consecutive_read_budget_violations,
+                "total_violations": self.total_read_budget_violations,
+            },
             "observability": self.observability.to_dict(
                 format_retries=self.total_format_retries_used,
                 patch_regeneration_retries=self.total_patch_regeneration_retries,
@@ -417,6 +479,7 @@ def _default_stop_reason(status: SessionStatus) -> str:
         SessionStatus.TEST_ENVIRONMENT_ERROR: "test_environment_error",
         SessionStatus.TEST_TIMEOUT: "pytest_timeout",
         SessionStatus.MODEL_OUTPUT_INVALID: "model_output_invalid",
+        SessionStatus.READ_BUDGET_EXHAUSTED: "read_budget_exhausted",
         SessionStatus.ERROR: "internal_error",
     }
     return mapping.get(status, status.value.lower())

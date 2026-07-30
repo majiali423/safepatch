@@ -130,6 +130,7 @@ def freeze_record(task_ids: list[str], experiment: str, model: str) -> dict[str,
             **(pricing_for_model(model) if model != "prepare-only" else {}),
         },
         "reference_fix_visible_to_agent": False,
+        "hidden_tests_visible_to_agent": False,
     }
 
 
@@ -162,6 +163,23 @@ def prepare_buggy_source(task_dir: Path, destination: Path) -> None:
             str((task_dir / task["public_test_patch"]).resolve()),
         ],
         cwd=destination,
+        check=True,
+    )
+
+
+def apply_patch_inside_workspace(workspace: Path, patch_path: Path) -> None:
+    """Apply a patch locally without discovering a Git repository above workspace."""
+    environment = os.environ.copy()
+    environment["GIT_CEILING_DIRECTORIES"] = str(workspace.resolve().parent)
+    subprocess.run(
+        [
+            "git",
+            "apply",
+            "--whitespace=nowarn",
+            str(patch_path.resolve()),
+        ],
+        cwd=workspace,
+        env=environment,
         check=True,
     )
 
@@ -251,10 +269,36 @@ def run_one(
             preflight_enabled=preflight_enabled,
         )
         session = controller.run(source, task["prompt"])
+        hidden_command = task.get("hidden_test_command")
+        hidden_result = None
+        if hidden_command:
+            repair_workspace = session.workspace_root
+            apply_patch_inside_workspace(
+                repair_workspace,
+                task_dir / task["hidden_test_patch"],
+            )
+            hidden_runner = TaskImageRunner(
+                image=acceptance["image"]["tag"],
+                test_command=hidden_command,
+            )
+            hidden_result = hidden_runner.run_pytest(
+                repair_workspace,
+                log_path=output / "hidden_test.log",
+            )
 
     summary = session.to_summary()
     usage = summary["observability"]["model"]["usage"]
     cost = estimate_cost(usage, model=model)
+    public_pass = bool(summary["final_tests_passed"])
+    hidden_pass = (
+        None
+        if hidden_result is None
+        else hidden_result.exit_code == 0 and hidden_result.environment_error is None
+    )
+    overall_pass = public_pass and hidden_pass is not False
+    failure_type = None if public_pass else summary["stop_reason"]
+    if public_pass and hidden_pass is False:
+        failure_type = "hidden_test_failure"
     result = {
         "task_id": task_id,
         "run_id": current_run,
@@ -263,8 +307,18 @@ def run_one(
         "prepare_only": False,
         "baseline_valid": True,
         "product_status": summary["status"],
-        "public_pass": summary["final_tests_passed"],
-        "failure_type": None if summary["final_tests_passed"] else summary["stop_reason"],
+        "public_pass": public_pass,
+        "hidden_pass": hidden_pass,
+        "overall_pass": overall_pass,
+        "failure_type": failure_type,
+        "analysis_phase": summary["analysis"]["phase"],
+        "exploration_reads": summary["read_budget"]["used"],
+        "evidence_requests": summary["analysis"]["evidence_requests_used"],
+        "evidence_parameter_corrections": summary["analysis"][
+            "parameter_corrections_used"
+        ],
+        "no_progress_actions": summary["analysis"]["total_no_progress_actions"],
+        "hard_policy_violations": summary["analysis"]["hard_policy_violations"],
         "attempts_used": summary["attempts_used"],
         "changed_files": summary["changed_files"],
         "first_patch_applicable": summary["first_patch_applicable"],
@@ -316,18 +370,21 @@ def write_report(experiment: str, freeze: dict[str, Any], rows: list[dict[str, A
         f"Model: `{freeze['model']}`",
         f"Pricing source: {freeze['pricing']['source']}",
         "",
-        "| Task | Status | Public | Attempts | Calls | Tokens | Cost USD | Duration s |",
-        "|---|---|---:|---:|---:|---:|---:|---:|",
+        "| Task | Status | Public | Hidden | Overall | Evidence | No progress | Calls | Tokens | Cost USD | Duration s |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in rows:
         usage = row.get("token_usage") or {}
         cost = row.get("estimated_cost") or {}
         lines.append(
-            "| {task} | {status} | {public} | {attempts} | {calls} | {tokens} | {cost} | {duration} |".format(
+            "| {task} | {status} | {public} | {hidden} | {overall} | {evidence} | {no_progress} | {calls} | {tokens} | {cost} | {duration} |".format(
                 task=row["task_id"],
                 status=row.get("product_status", "prepare-only"),
                 public=row.get("public_pass", "-"),
-                attempts=row.get("attempts_used", "-"),
+                hidden=row.get("hidden_pass", "-"),
+                overall=row.get("overall_pass", "-"),
+                evidence=row.get("evidence_requests", "-"),
+                no_progress=row.get("no_progress_actions", "-"),
                 calls=row.get("model_calls", "-"),
                 tokens=usage.get("total_tokens", "-"),
                 cost=cost.get("estimated_usd", "-"),
@@ -338,6 +395,8 @@ def write_report(experiment: str, freeze: dict[str, Any], rows: list[dict[str, A
         "",
         f"Completed model runs: **{len(completed)}**",
         f"Public successes: **{sum(1 for row in completed if row.get('public_pass'))}/{len(completed)}**",
+        f"Hidden-test successes: **{sum(1 for row in completed if row.get('hidden_pass'))}/{sum(1 for row in completed if row.get('hidden_pass') is not None)}**",
+        f"Overall successes: **{sum(1 for row in completed if row.get('overall_pass'))}/{len(completed)}**",
         f"Provider-reported tokens: **{total_tokens}** across **{total_calls}** model calls",
         f"Wall-clock duration: **{total_duration:.3f} s**",
         f"Format retries: **{total_format_retries}**",

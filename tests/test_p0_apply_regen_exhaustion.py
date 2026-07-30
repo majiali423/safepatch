@@ -52,6 +52,13 @@ def _good_patch() -> dict:
     return _patch("1", "2")
 
 
+def _required_read() -> dict:
+    return {
+        "tool": "read_file",
+        "args": {"path": "mod.py", "start_line": 1, "end_line": 2},
+    }
+
+
 def _load_events(session) -> list[dict]:
     return [
         json.loads(line)
@@ -141,7 +148,13 @@ def test_type_a_context_mismatch_apply_failures_exhaust_to_patch_not_applicable(
         return True
 
     runner = _BaselineOnlyRunner()
-    script = [_good_patch() for _ in range(6)]
+    script = [
+        _good_patch(),
+        _required_read(),
+        _good_patch(),
+        _required_read(),
+        _good_patch(),
+    ]
     controller = TaskController(
         llm=LLMClient(dry_run_script=script),
         runner=runner,  # type: ignore[arg-type]
@@ -251,8 +264,10 @@ def test_regeneration_budget_resets_after_successful_apply(
     # 4) apply success (value 2) → repair attempt 2, pytest pass
     script = [
         _patch("1", "2"),  # will mismatch via hook
+        _required_read(),
         _patch("1", "3"),  # applies; tests still fail
         _patch("3", "2"),  # will mismatch via hook
+        _required_read(),
         _patch("3", "2"),  # applies; tests pass
     ]
 

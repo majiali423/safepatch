@@ -1,0 +1,21 @@
+diff --git a/safepatch_hidden/test_hidden_regression.py b/safepatch_hidden/test_hidden_regression.py
+new file mode 100644
+--- /dev/null
++++ b/safepatch_hidden/test_hidden_regression.py
+@@ -0,0 +1,16 @@
++from pathlib import Path
++from tempfile import TemporaryDirectory
++
++from pysnooper.pysnooper import get_write_function
++
++
++def test_pathlike_output_appends_without_truncating():
++    with TemporaryDirectory() as raw:
++        output = Path(raw) / "trace.log"
++        output.write_text("existing\n")
++
++        write = get_write_function(output)
++        write("first\n")
++        write("second\n")
++
++        assert output.read_text() == "existing\nfirst\nsecond\n"

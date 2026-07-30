@@ -7,6 +7,16 @@
   "task_python": "3.8.20",
   "prompt": "When @pysnooper.snoop receives a filesystem path, tracing should append to that path instead of raising an exception.",
   "public_test_patch": "public_test.patch",
+  "hidden_test_patch": "hidden_test.patch",
+  "hidden_test_command": [
+    "python",
+    "-m",
+    "pytest",
+    "safepatch_hidden/test_hidden_regression.py::test_pathlike_output_appends_without_truncating",
+    "-q",
+    "-s",
+    "--disable-warnings"
+  ],
   "test_command": [
     "python",
     "-m",

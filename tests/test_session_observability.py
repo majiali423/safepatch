@@ -421,10 +421,10 @@ def test_format_retry_increments_model_and_format_not_repair(tmp_path: Path):
 
 def test_patch_regeneration_counts_without_repair(tmp_path: Path):
     """8. Patch regeneration then success."""
-    session = _run(tmp_path, [_mismatch_patch(), _good_patch()])
+    session = _run(tmp_path, [_mismatch_patch(), _read_tool(), _good_patch()])
     assert session.status == SessionStatus.SUCCEEDED
     _, obs = _obs(session)
-    assert obs["model"]["calls"] == 2
+    assert obs["model"]["calls"] == 3
     assert obs["tools"]["proposal_calls"] == 2
     assert obs["retries"]["patch_regeneration"] == 1
     assert obs["retries"]["repair_attempts"] == 1
@@ -442,7 +442,13 @@ def test_repair_attempt_only_after_apply_and_pytest(tmp_path: Path):
 
 def test_preflight_permanent_failure_zero_post_apply_pytest(tmp_path: Path):
     """9. PATCH_NOT_APPLICABLE."""
-    script = [_mismatch_patch(), _mismatch_patch(), _mismatch_patch()]
+    script = [
+        _mismatch_patch(),
+        _read_tool(),
+        _mismatch_patch(),
+        _read_tool(),
+        _mismatch_patch(),
+    ]
     session = _run(tmp_path, script)
     assert session.status == SessionStatus.PATCH_NOT_APPLICABLE
     _, obs = _obs(session)
@@ -452,7 +458,7 @@ def test_preflight_permanent_failure_zero_post_apply_pytest(tmp_path: Path):
     assert obs["retries"]["patch_regeneration"] == 2
     assert obs["finished_at"]
     assert isinstance(obs["duration_ms"], int)
-    assert obs["model"]["calls"] == 3
+    assert obs["model"]["calls"] == 5
     _assert_call_usage_invariant(obs)
 
 
@@ -588,7 +594,13 @@ def test_terminal_paths_write_duration(tmp_path: Path):
     clock = FakeClock()
     session = _run(
         tmp_path,
-        [_mismatch_patch(), _mismatch_patch(), _mismatch_patch()],
+        [
+            _mismatch_patch(),
+            _read_tool(),
+            _mismatch_patch(),
+            _read_tool(),
+            _mismatch_patch(),
+        ],
         clock=clock,
     )
     assert session.status == SessionStatus.PATCH_NOT_APPLICABLE

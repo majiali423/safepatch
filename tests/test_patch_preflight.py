@@ -79,6 +79,13 @@ def _good_patch() -> dict:
     return _patch("1", "2", diagnosis="correct")
 
 
+def _required_read() -> dict:
+    return {
+        "tool": "read_file",
+        "args": {"path": "mod.py", "start_line": 1, "end_line": 2},
+    }
+
+
 def _load_trace(session) -> list[dict]:
     path = session.artifacts_dir / "trace.jsonl"
     events = []
@@ -98,7 +105,14 @@ def test_mismatch_then_good_patch_one_repair_attempt(tmp_path: Path):
         return True
 
     controller = TaskController(
-        llm=LLMClient(dry_run_script=[_mismatch_patch(), _good_patch()]),
+        llm=LLMClient(
+            dry_run_script=[
+                _mismatch_patch(),
+                _good_patch(),  # blocked: no fresh read yet
+                _required_read(),
+                _good_patch(),
+            ]
+        ),
         runner=FailThenPassRunner(),  # type: ignore[arg-type]
         approve=approve,
         say=lambda _m: None,
@@ -117,12 +131,115 @@ def test_mismatch_then_good_patch_one_repair_attempt(tmp_path: Path):
     assert "patch_regeneration_requested" in events
     assert "patch_preflight_succeeded" in events
     assert "patch_applied" in events
+    assert "required_read_registered" in events
+    assert "proposal_blocked_required_read" in events
+    assert "required_read_satisfied" in events
+
+
+def test_context_mismatch_feedback_contains_expected_actual_and_read_range(tmp_path: Path):
+    repo = _mini_repo(tmp_path)
+    proposal = PatchProposal.from_dict(_mismatch_patch()["args"])
+
+    result = PatchPreflight.run(proposal, repo)
+
+    assert isinstance(result, PreflightFailure)
+    assert result.error_kind == "deletion_mismatch"
+    assert result.target_file == "mod.py"
+    assert result.requested_line == 2
+    assert result.first_unmatched_context == "    return 999"
+    assert result.actual_context == "    return 1"
+    assert result.suggested_read_start == 1
+    assert result.suggested_read_end == 2
+    feedback = result.feedback_message()
+    assert "requested_line=2" in feedback
+    assert "actual_content='    return 1'" in feedback
+    assert "1|def f():" in feedback
+    assert "start_line=1, end_line=2" in feedback
+    assert "Do not reuse stale line numbers" in feedback
+
+
+def test_unique_exact_hunk_is_safely_relocated_in_preflight_and_apply(tmp_path: Path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    target = repo / "mod.py"
+    target.write_text(
+        "# inserted header\n\n\ndef f():\n    return 1\n",
+        encoding="utf-8",
+    )
+    proposal = PatchProposal(
+        diagnosis="fix shifted function",
+        affected_files=["mod.py"],
+        unified_diff=(
+            "--- a/mod.py\n"
+            "+++ b/mod.py\n"
+            "@@ -1,2 +1,2 @@\n"
+            " def f():\n"
+            "-    return 1\n"
+            "+    return 2\n"
+        ),
+        expected_behavior="return 2",
+        risk_notes="low",
+        tests_to_run=["tests/test_mod.py"],
+    )
+
+    checked = PatchPreflight.run(proposal, repo)
+    assert isinstance(checked, PreflightSuccess)
+    assert checked.relocations == [
+        {
+            "file": "mod.py",
+            "hunk_index": 0,
+            "requested_line": 1,
+            "applied_line": 4,
+        }
+    ]
+
+    applied = apply_proposal(proposal, repo)
+    assert applied.ok is True
+    assert applied.relocations == checked.relocations
+    assert target.read_text(encoding="utf-8") == (
+        "# inserted header\n\n\ndef f():\n    return 2\n"
+    )
+
+
+def test_relocation_refuses_ambiguous_exact_blocks_without_writing(tmp_path: Path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    target = repo / "mod.py"
+    original = "# header\nx = 1\n\n# another\nx = 1\n"
+    target.write_text(original, encoding="utf-8")
+    proposal = PatchProposal(
+        diagnosis="ambiguous replacement",
+        affected_files=["mod.py"],
+        unified_diff=(
+            "--- a/mod.py\n"
+            "+++ b/mod.py\n"
+            "@@ -1 +1 @@\n"
+            "-x = 1\n"
+            "+x = 2\n"
+        ),
+        expected_behavior="replace one assignment",
+        risk_notes="ambiguous",
+        tests_to_run=["tests/test_mod.py"],
+    )
+
+    checked = PatchPreflight.run(proposal, repo)
+    assert isinstance(checked, PreflightFailure)
+    assert checked.error_kind == "ambiguous_context"
+    assert checked.candidate_lines == [2, 5]
+    assert "multiple lines: 2, 5" in checked.detail
+
+    applied = apply_proposal(proposal, repo)
+    assert applied.ok is False
+    assert applied.error_kind == "ambiguous_context"
+    assert target.read_text(encoding="utf-8") == original
 
 
 def test_preflight_ablation_applies_then_regenerates(tmp_path: Path):
     repo = _mini_repo(tmp_path)
     controller = TaskController(
-        llm=LLMClient(dry_run_script=[_mismatch_patch(), _good_patch()]),
+        llm=LLMClient(
+            dry_run_script=[_mismatch_patch(), _required_read(), _good_patch()]
+        ),
         runner=FailThenPassRunner(),  # type: ignore[arg-type]
         approve=lambda _binding, _attempt: True,
         say=lambda _m: None,
@@ -154,7 +271,13 @@ def test_three_mismatches_patch_not_applicable(tmp_path: Path):
         approve_calls += 1
         return True
 
-    script = [_mismatch_patch(), _mismatch_patch(), _mismatch_patch()]
+    script = [
+        _mismatch_patch(),
+        _required_read(),
+        _mismatch_patch(),
+        _required_read(),
+        _mismatch_patch(),
+    ]
     controller = TaskController(
         llm=LLMClient(dry_run_script=script),
         runner=FailThenPassRunner(),  # type: ignore[arg-type]
@@ -209,7 +332,14 @@ def test_new_patch_revalidates_policy_and_reapproves(tmp_path: Path):
         },
     }
     controller = TaskController(
-        llm=LLMClient(dry_run_script=[_mismatch_patch(), bad_test_patch, _good_patch()]),
+        llm=LLMClient(
+            dry_run_script=[
+                _mismatch_patch(),
+                _required_read(),
+                bad_test_patch,
+                _good_patch(),
+            ]
+        ),
         runner=FailThenPassRunner(),  # type: ignore[arg-type]
         approve=approve,
         say=lambda _m: None,
@@ -317,6 +447,7 @@ def test_format_regen_repair_counters_isolated(tmp_path: Path):
     script = [
         "not json",
         _mismatch_patch(),
+        _required_read(),
         _good_patch(),
     ]
     controller = TaskController(
@@ -364,7 +495,9 @@ def test_apply_failed_after_preflight_trace(tmp_path: Path, monkeypatch):
 
     # After race: regenerate with good patch again.
     controller = TaskController(
-        llm=LLMClient(dry_run_script=[_good_patch(), _good_patch()]),
+        llm=LLMClient(
+            dry_run_script=[_good_patch(), _required_read(), _good_patch()]
+        ),
         runner=FailThenPassRunner(),  # type: ignore[arg-type]
         approve=lambda *_: True,
         say=lambda _m: None,

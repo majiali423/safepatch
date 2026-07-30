@@ -51,6 +51,12 @@ def parse_proposal(
             error_kind=FormatErrorKind.INVALID_PROPOSAL_SCHEMA,
             raw_text=raw_text,
         )
+    if "base_revisions" in data and not isinstance(data["base_revisions"], dict):
+        raise ModelOutputError(
+            "base_revisions must be an object mapping paths to sha256 revisions",
+            error_kind=FormatErrorKind.INVALID_PROPOSAL_SCHEMA,
+            raw_text=raw_text,
+        )
     if "@@" not in data["unified_diff"]:
         if "---" not in data["unified_diff"] or "+++" not in data["unified_diff"]:
             raise ModelOutputError(

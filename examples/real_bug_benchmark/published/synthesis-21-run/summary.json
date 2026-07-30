@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "unique_tasks": 7,
+  "runs": 21,
+  "runs_per_task": {
+    "pysnooper-3": 3,
+    "sanic-5": 3,
+    "thefuck-16": 3,
+    "thefuck-19": 3,
+    "tornado-10": 3,
+    "tornado-11": 3,
+    "tqdm-3": 3
+  },
+  "public_successes": 19,
+  "hidden_successes": 17,
+  "overall_successes": 17,
+  "overall_success_rate": 0.809524,
+  "evidence_requests": 2,
+  "runs_using_evidence": 1,
+  "evidence_parameter_corrections": 1,
+  "no_progress_actions": 7,
+  "hard_policy_violations": 0,
+  "patch_not_applicable": 1,
+  "preflight_failures": 6,
+  "apply_failures_after_preflight": 0,
+  "format_retries": 4,
+  "model_calls": 188,
+  "total_tokens": 3953885,
+  "duration_sec": 1441.553,
+  "estimated_cost_usd": 0.08563264,
+  "modified_test_files": []
+}

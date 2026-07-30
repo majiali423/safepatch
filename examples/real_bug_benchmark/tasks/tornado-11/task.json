@@ -7,6 +7,16 @@
   "task_python": "3.7.17",
   "prompt": "HTTP transfer-coding values are case-insensitive. Requests using Transfer-Encoding: Chunked must be decoded like lowercase chunked.",
   "public_test_patch": "public_test.patch",
+  "hidden_test_patch": "hidden_test.patch",
+  "hidden_test_command": [
+    "python",
+    "-m",
+    "pytest",
+    "safepatch_hidden/test_hidden_regression.py::HiddenHTTPServerRawTest::test_chunked_request_mixed_case",
+    "-q",
+    "-s",
+    "--disable-warnings"
+  ],
   "test_command": [
     "python",
     "-m",

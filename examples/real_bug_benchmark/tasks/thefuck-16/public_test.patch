@@ -1,0 +1,36 @@
+diff --git a/tests/shells/test_bash.py b/tests/shells/test_bash.py
+index 1a00e9bd..c3738f44 100644
+--- a/tests/shells/test_bash.py
++++ b/tests/shells/test_bash.py
+@@ -46,6 +46,13 @@ class TestBash(object):
+         assert 'TF_ALIAS=fuck' in shell.app_alias('fuck')
+         assert 'PYTHONIOENCODING=utf-8' in shell.app_alias('fuck')
+ 
++    def test_app_alias_variables_correctly_set(self, shell):
++        alias = shell.app_alias('fuck')
++        assert "alias fuck='TF_CMD=$(TF_ALIAS" in alias
++        assert '$(TF_ALIAS=fuck PYTHONIOENCODING' in alias
++        assert 'PYTHONIOENCODING=utf-8 TF_SHELL_ALIASES' in alias
++        assert 'ALIASES=$(alias) thefuck' in alias
++
+     def test_get_history(self, history_lines, shell):
+         history_lines(['ls', 'rm'])
+         assert list(shell.get_history()) == ['ls', 'rm']
+diff --git a/tests/shells/test_zsh.py b/tests/shells/test_zsh.py
+index 450191d1..f44f0517 100644
+--- a/tests/shells/test_zsh.py
++++ b/tests/shells/test_zsh.py
+@@ -45,6 +45,13 @@ class TestZsh(object):
+         assert 'thefuck' in shell.app_alias('fuck')
+         assert 'PYTHONIOENCODING' in shell.app_alias('fuck')
+ 
++    def test_app_alias_variables_correctly_set(self, shell):
++        alias = shell.app_alias('fuck')
++        assert "alias fuck='TF_CMD=$(TF_ALIAS" in alias
++        assert '$(TF_ALIAS=fuck PYTHONIOENCODING' in alias
++        assert 'PYTHONIOENCODING=utf-8 TF_SHELL_ALIASES' in alias
++        assert 'ALIASES=$(alias) thefuck' in alias
++
+     def test_get_history(self, history_lines, shell):
+         history_lines([': 1432613911:0;ls', ': 1432613916:0;rm'])
+         assert list(shell.get_history()) == ['ls', 'rm']

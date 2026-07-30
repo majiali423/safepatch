@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
 import time
@@ -11,7 +10,7 @@ import pytest
 
 from code_agent.controller import TaskController
 from code_agent.llm import LLMClient
-from code_agent.patching.applier import PatchApplier, apply_proposal
+from code_agent.patching.applier import PatchApplier
 from code_agent.patching.validator import MAX_CHANGED_LINES, PolicyValidator
 from code_agent.repository.workspace import WorkspaceError, import_repository, safe_resolve
 from code_agent.runtime.docker_pytest import DockerPytestRunner
