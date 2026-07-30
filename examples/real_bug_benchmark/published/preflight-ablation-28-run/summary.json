@@ -1,0 +1,298 @@
+{
+  "schema_version": 1,
+  "completed_slots": 28,
+  "unique_tasks": 7,
+  "preflight_enabled": {
+    "runs": 14,
+    "public_successes": 13,
+    "hidden_successes": 11,
+    "overall_successes": 11,
+    "first_patch_applicable": 13,
+    "preflight_rejections": 0,
+    "apply_failures_after_preflight": 0,
+    "apply_failures_without_preflight": 0,
+    "repair_attempts": 13,
+    "model_calls": 97,
+    "tokens": 1873354,
+    "duration_sec": 696.968,
+    "estimated_cost_usd": 0.02879704,
+    "failure_types": {
+      "evidence_hard_violation": 1,
+      "hidden_test_failure": 2
+    }
+  },
+  "preflight_disabled": {
+    "runs": 14,
+    "public_successes": 14,
+    "hidden_successes": 9,
+    "overall_successes": 9,
+    "first_patch_applicable": null,
+    "preflight_rejections": 0,
+    "apply_failures_after_preflight": 0,
+    "apply_failures_without_preflight": 0,
+    "repair_attempts": 14,
+    "model_calls": 98,
+    "tokens": 1914303,
+    "duration_sec": 775.179,
+    "estimated_cost_usd": 0.03145705,
+    "failure_types": {
+      "hidden_test_failure": 5
+    }
+  },
+  "per_task": {
+    "pysnooper-3": {
+      "preflight_enabled": {
+        "runs": 2,
+        "public_successes": 2,
+        "hidden_successes": 2,
+        "overall_successes": 2,
+        "first_patch_applicable": 2,
+        "preflight_rejections": 0,
+        "apply_failures_after_preflight": 0,
+        "apply_failures_without_preflight": 0,
+        "repair_attempts": 2,
+        "model_calls": 4,
+        "tokens": 10883,
+        "duration_sec": 36.977,
+        "estimated_cost_usd": 0.00073078,
+        "failure_types": {}
+      },
+      "preflight_disabled": {
+        "runs": 2,
+        "public_successes": 2,
+        "hidden_successes": 2,
+        "overall_successes": 2,
+        "first_patch_applicable": null,
+        "preflight_rejections": 0,
+        "apply_failures_after_preflight": 0,
+        "apply_failures_without_preflight": 0,
+        "repair_attempts": 2,
+        "model_calls": 4,
+        "tokens": 10156,
+        "duration_sec": 28.967,
+        "estimated_cost_usd": 0.00063259,
+        "failure_types": {}
+      }
+    },
+    "tornado-11": {
+      "preflight_enabled": {
+        "runs": 2,
+        "public_successes": 2,
+        "hidden_successes": 2,
+        "overall_successes": 2,
+        "first_patch_applicable": 2,
+        "preflight_rejections": 0,
+        "apply_failures_after_preflight": 0,
+        "apply_failures_without_preflight": 0,
+        "repair_attempts": 2,
+        "model_calls": 12,
+        "tokens": 360924,
+        "duration_sec": 64.93,
+        "estimated_cost_usd": 0.00289232,
+        "failure_types": {}
+      },
+      "preflight_disabled": {
+        "runs": 2,
+        "public_successes": 2,
+        "hidden_successes": 2,
+        "overall_successes": 2,
+        "first_patch_applicable": null,
+        "preflight_rejections": 0,
+        "apply_failures_after_preflight": 0,
+        "apply_failures_without_preflight": 0,
+        "repair_attempts": 2,
+        "model_calls": 16,
+        "tokens": 485434,
+        "duration_sec": 77.402,
+        "estimated_cost_usd": 0.00351563,
+        "failure_types": {}
+      }
+    },
+    "tqdm-3": {
+      "preflight_enabled": {
+        "runs": 2,
+        "public_successes": 2,
+        "hidden_successes": 2,
+        "overall_successes": 2,
+        "first_patch_applicable": 2,
+        "preflight_rejections": 0,
+        "apply_failures_after_preflight": 0,
+        "apply_failures_without_preflight": 0,
+        "repair_attempts": 2,
+        "model_calls": 17,
+        "tokens": 100554,
+        "duration_sec": 109.883,
+        "estimated_cost_usd": 0.00399265,
+        "failure_types": {}
+      },
+      "preflight_disabled": {
+        "runs": 2,
+        "public_successes": 2,
+        "hidden_successes": 0,
+        "overall_successes": 0,
+        "first_patch_applicable": null,
+        "preflight_rejections": 0,
+        "apply_failures_after_preflight": 0,
+        "apply_failures_without_preflight": 0,
+        "repair_attempts": 2,
+        "model_calls": 21,
+        "tokens": 138424,
+        "duration_sec": 165.866,
+        "estimated_cost_usd": 0.00605571,
+        "failure_types": {
+          "hidden_test_failure": 2
+        }
+      }
+    },
+    "sanic-5": {
+      "preflight_enabled": {
+        "runs": 2,
+        "public_successes": 2,
+        "hidden_successes": 2,
+        "overall_successes": 2,
+        "first_patch_applicable": 2,
+        "preflight_rejections": 0,
+        "apply_failures_after_preflight": 0,
+        "apply_failures_without_preflight": 0,
+        "repair_attempts": 2,
+        "model_calls": 19,
+        "tokens": 230272,
+        "duration_sec": 152.846,
+        "estimated_cost_usd": 0.00611805,
+        "failure_types": {}
+      },
+      "preflight_disabled": {
+        "runs": 2,
+        "public_successes": 2,
+        "hidden_successes": 1,
+        "overall_successes": 1,
+        "first_patch_applicable": null,
+        "preflight_rejections": 0,
+        "apply_failures_after_preflight": 0,
+        "apply_failures_without_preflight": 0,
+        "repair_attempts": 2,
+        "model_calls": 16,
+        "tokens": 179992,
+        "duration_sec": 133.411,
+        "estimated_cost_usd": 0.00492308,
+        "failure_types": {
+          "hidden_test_failure": 1
+        }
+      }
+    },
+    "thefuck-19": {
+      "preflight_enabled": {
+        "runs": 2,
+        "public_successes": 2,
+        "hidden_successes": 2,
+        "overall_successes": 2,
+        "first_patch_applicable": 2,
+        "preflight_rejections": 0,
+        "apply_failures_after_preflight": 0,
+        "apply_failures_without_preflight": 0,
+        "repair_attempts": 2,
+        "model_calls": 6,
+        "tokens": 61811,
+        "duration_sec": 35.601,
+        "estimated_cost_usd": 0.0007044,
+        "failure_types": {}
+      },
+      "preflight_disabled": {
+        "runs": 2,
+        "public_successes": 2,
+        "hidden_successes": 2,
+        "overall_successes": 2,
+        "first_patch_applicable": null,
+        "preflight_rejections": 0,
+        "apply_failures_after_preflight": 0,
+        "apply_failures_without_preflight": 0,
+        "repair_attempts": 2,
+        "model_calls": 6,
+        "tokens": 62469,
+        "duration_sec": 33.943,
+        "estimated_cost_usd": 0.00061984,
+        "failure_types": {}
+      }
+    },
+    "tornado-10": {
+      "preflight_enabled": {
+        "runs": 2,
+        "public_successes": 1,
+        "hidden_successes": 0,
+        "overall_successes": 0,
+        "first_patch_applicable": 1,
+        "preflight_rejections": 0,
+        "apply_failures_after_preflight": 0,
+        "apply_failures_without_preflight": 0,
+        "repair_attempts": 1,
+        "model_calls": 28,
+        "tokens": 962270,
+        "duration_sec": 143.315,
+        "estimated_cost_usd": 0.00775717,
+        "failure_types": {
+          "evidence_hard_violation": 1,
+          "hidden_test_failure": 1
+        }
+      },
+      "preflight_disabled": {
+        "runs": 2,
+        "public_successes": 2,
+        "hidden_successes": 0,
+        "overall_successes": 0,
+        "first_patch_applicable": null,
+        "preflight_rejections": 0,
+        "apply_failures_after_preflight": 0,
+        "apply_failures_without_preflight": 0,
+        "repair_attempts": 2,
+        "model_calls": 26,
+        "tokens": 917377,
+        "duration_sec": 173.171,
+        "estimated_cost_usd": 0.00923825,
+        "failure_types": {
+          "hidden_test_failure": 2
+        }
+      }
+    },
+    "thefuck-16": {
+      "preflight_enabled": {
+        "runs": 2,
+        "public_successes": 2,
+        "hidden_successes": 1,
+        "overall_successes": 1,
+        "first_patch_applicable": 2,
+        "preflight_rejections": 0,
+        "apply_failures_after_preflight": 0,
+        "apply_failures_without_preflight": 0,
+        "repair_attempts": 2,
+        "model_calls": 11,
+        "tokens": 146640,
+        "duration_sec": 153.416,
+        "estimated_cost_usd": 0.00660167,
+        "failure_types": {
+          "hidden_test_failure": 1
+        }
+      },
+      "preflight_disabled": {
+        "runs": 2,
+        "public_successes": 2,
+        "hidden_successes": 2,
+        "overall_successes": 2,
+        "first_patch_applicable": null,
+        "preflight_rejections": 0,
+        "apply_failures_after_preflight": 0,
+        "apply_failures_without_preflight": 0,
+        "repair_attempts": 2,
+        "model_calls": 9,
+        "tokens": 120451,
+        "duration_sec": 162.419,
+        "estimated_cost_usd": 0.00647195,
+        "failure_types": {}
+      }
+    }
+  },
+  "environment_failures": 0,
+  "total_tokens": 3787657,
+  "total_duration_sec": 1472.147,
+  "total_estimated_cost_usd": 0.06025409,
+  "modified_test_files": []
+}

@@ -1,0 +1,122 @@
+exit_code: 1
+duration_sec: 0.683
+environment_error: None
+error_kind: None
+failed_tests: []
+timeout_seconds: 120
+container_name: None
+network_mode: none
+user: 1000:1000
+
+--- stdout ---
+FF
+=================================== FAILURES ===================================
+____________ test_custom_alias_scopes_variables_inside_alias[Bash] _____________
+
+shell_class = <class 'thefuck.shells.bash.Bash'>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d5946685a10>
+
+    @pytest.mark.parametrize('shell_class', [Bash, Zsh])
+    def test_custom_alias_scopes_variables_inside_alias(shell_class, monkeypatch):
+        monkeypatch.setattr(settings, 'alter_history', False)
+    
+        alias = shell_class().app_alias('fixit')
+        declaration = "alias fixit='"
+    
+        assert alias.startswith(declaration)
+        body = alias[len(declaration):]
+        assert body.startswith(
+            'TF_CMD=$(TF_ALIAS=fixit PYTHONIOENCODING=utf-8 '
+            'TF_SHELL_ALIASES=$(alias) thefuck '
+        )
+        assert alias.count('TF_ALIAS=fixit') == 1
+>       assert alias.endswith("eval $TF_CMD'")
+E       assert False
+E        +  where False = <built-in method endswith of str object at 0x7d594671e920>("eval $TF_CMD'")
+E        +    where <built-in method endswith of str object at 0x7d594671e920> = "alias fixit='TF_CMD=$(TF_ALIAS=fixit PYTHONIOENCODING=utf-8 TF_SHELL_ALIASES=$(alias) thefuck $(fc -ln -1)) &&  eval $TF_CMD''".endswith
+
+safepatch_hidden/test_hidden_regression.py:22: AssertionError
+_____________ test_custom_alias_scopes_variables_inside_alias[Zsh] _____________
+
+shell_class = <class 'thefuck.shells.zsh.Zsh'>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d594669d490>
+
+    @pytest.mark.parametrize('shell_class', [Bash, Zsh])
+    def test_custom_alias_scopes_variables_inside_alias(shell_class, monkeypatch):
+        monkeypatch.setattr(settings, 'alter_history', False)
+    
+        alias = shell_class().app_alias('fixit')
+        declaration = "alias fixit='"
+    
+        assert alias.startswith(declaration)
+        body = alias[len(declaration):]
+        assert body.startswith(
+            'TF_CMD=$(TF_ALIAS=fixit PYTHONIOENCODING=utf-8 '
+            'TF_SHELL_ALIASES=$(alias) thefuck '
+        )
+        assert alias.count('TF_ALIAS=fixit') == 1
+>       assert alias.endswith("eval $TF_CMD'")
+E       assert False
+E        +  where False = <built-in method endswith of str object at 0x7d5946795f30>("eval $TF_CMD'")
+E        +    where <built-in method endswith of str object at 0x7d5946795f30> = "alias fixit='TF_CMD=$(TF_ALIAS=fixit PYTHONIOENCODING=utf-8 TF_SHELL_ALIASES=$(alias) thefuck $(fc -ln -1 | tail -n 1)) &&  eval $TF_CMD''".endswith
+
+safepatch_hidden/test_hidden_regression.py:22: AssertionError
+2 failed in 0.15 seconds
+
+
+--- stderr ---
+
+
+--- traceback_summary ---
+=================================== FAILURES ===================================
+____________ test_custom_alias_scopes_variables_inside_alias[Bash] _____________
+
+shell_class = <class 'thefuck.shells.bash.Bash'>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d5946685a10>
+
+    @pytest.mark.parametrize('shell_class', [Bash, Zsh])
+    def test_custom_alias_scopes_variables_inside_alias(shell_class, monkeypatch):
+        monkeypatch.setattr(settings, 'alter_history', False)
+    
+        alias = shell_class().app_alias('fixit')
+        declaration = "alias fixit='"
+    
+        assert alias.startswith(declaration)
+        body = alias[len(declaration):]
+        assert body.startswith(
+            'TF_CMD=$(TF_ALIAS=fixit PYTHONIOENCODING=utf-8 '
+            'TF_SHELL_ALIASES=$(alias) thefuck '
+        )
+        assert alias.count('TF_ALIAS=fixit') == 1
+>       assert alias.endswith("eval $TF_CMD'")
+E       assert False
+E        +  where False = <built-in method endswith of str object at 0x7d594671e920>("eval $TF_CMD'")
+E        +    where <built-in method endswith of str object at 0x7d594671e920> = "alias fixit='TF_CMD=$(TF_ALIAS=fixit PYTHONIOENCODING=utf-8 TF_SHELL_ALIASES=$(alias) thefuck $(fc -ln -1)) &&  eval $TF_CMD''".endswith
+
+safepatch_hidden/test_hidden_regression.py:22: AssertionError
+_____________ test_custom_alias_scopes_variables_inside_alias[Zsh] _____________
+
+shell_class = <class 'thefuck.shells.zsh.Zsh'>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7d594669d490>
+
+    @pytest.mark.parametrize('shell_class', [Bash, Zsh])
+    def test_custom_alias_scopes_variables_inside_alias(shell_class, monkeypatch):
+        monkeypatch.setattr(settings, 'alter_history', False)
+    
+        alias = shell_class().app_alias('fixit')
+        declaration = "alias fixit='"
+    
+        assert alias.startswith(declaration)
+        body = alias[len(declaration):]
+        assert body.startswith(
+            'TF_CMD=$(TF_ALIAS=fixit PYTHONIOENCODING=utf-8 '
+            'TF_SHELL_ALIASES=$(alias) thefuck '
+        )
+        assert alias.count('TF_ALIAS=fixit') == 1
+>       assert alias.endswith("eval $TF_CMD'")
+E       assert False
+E        +  where False = <built-in method endswith of str object at 0x7d5946795f30>("eval $TF_CMD'")
+E        +    where <built-in method endswith of str object at 0x7d5946795f30> = "alias fixit='TF_CMD=$(TF_ALIAS=fixit PYTHONIOENCODING=utf-8 TF_SHELL_ALIASES=$(alias) thefuck $(fc -ln -1 | tail -n 1)) &&  eval $TF_CMD''".endswith
+
+safepatch_hidden/test_hidden_regression.py:22: AssertionError
+2 failed in 0.15 seconds

@@ -223,6 +223,13 @@ failed. `request_evidence` was used in only 1/21 runs and did not make that run
 successful, so it remains an experimental mechanism rather than a claimed source
 of accuracy improvement.
 
+A separate frozen, interleaved preflight comparison ran all seven tasks twice
+per condition (28 runs). Enabled finished 11/14 and disabled finished 9/14, but
+there were zero preflight rejections and zero apply failures in either condition.
+The observed outcome difference therefore cannot be attributed to preflight;
+the experiment is retained as useful negative evidence rather than advertised as
+an accuracy gain.
+
 Verify the committed 21-run result without Docker or an API key:
 
 ```bash
@@ -232,6 +239,12 @@ python examples/real_bug_benchmark/verify_published_results.py
 To rebuild and test every pinned historical environment, use
 `python examples/real_bug_benchmark/verify.py` (Docker required).
 
+Verify the published preflight comparison independently:
+
+```bash
+python examples/real_bug_benchmark/verify_preflight_ablation.py
+```
+
 See the [acceptance report](examples/real_bug_benchmark/ACCEPTANCE_REPORT.md),
 [benchmark design](examples/real_bug_benchmark/DESIGN.md), and
 [model evaluation report](examples/real_bug_benchmark/MODEL_EVAL_REPORT.md).
@@ -240,7 +253,9 @@ The focused results are in the
 The frozen 21-run result is in the
 [synthesis state-machine report](examples/real_bug_benchmark/SYNTHESIS_MODEL_EVAL_REPORT.md),
 with a [sanitized public evidence bundle](examples/real_bug_benchmark/published/synthesis-21-run/README.md)
-and an [annotated failure case study](docs/FAILURE_CASE_STUDY.md).
+and an [annotated failure case study](docs/FAILURE_CASE_STUDY.md). The controlled
+comparison has a [full interpretation report](examples/real_bug_benchmark/PREFLIGHT_CONTROLLED_COMPARISON_REPORT.md)
+and a [sanitized 28-run bundle](examples/real_bug_benchmark/published/preflight-ablation-28-run/README.md).
 
 ## Quick Start
 
@@ -398,6 +413,7 @@ tests/                      Unit / integration / Docker E2E tests
 | [Patch Applicability](docs/V0.3_PATCH_APPLICABILITY.md) | Preflight / regeneration design |
 | [Demo](docs/DEMO.md) | End-to-end demonstration guide |
 | [Real-bug Benchmark](examples/real_bug_benchmark/DESIGN.md) | Frozen selection and environment acceptance protocol |
+| [Preflight Controlled Comparison](examples/real_bug_benchmark/PREFLIGHT_CONTROLLED_COMPARISON_REPORT.md) | Honest interpretation of the frozen 28-run on/off experiment |
 | [Failure Case Study](docs/FAILURE_CASE_STUDY.md) | Why two public-test passes failed hidden semantics |
 | [Walkthrough](docs/WALKTHROUGH.md) | Conceptual end-to-end explanation |
 | [v0.2 Release Notes](docs/V0.2_RELEASE_NOTES.md) | Prior release notes |

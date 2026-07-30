@@ -83,5 +83,6 @@ def test_totals_keep_conditions_separate():
     result = module.totals(rows)
     assert result["preflight_enabled"]["overall_successes"] == 1
     assert result["preflight_disabled"]["overall_successes"] == 0
+    assert result["preflight_disabled"]["first_patch_applicable"] is None
     assert result["preflight_disabled"]["apply_failures_without_preflight"] == 1
     assert result["total_estimated_cost_usd"] == 0.02

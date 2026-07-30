@@ -1,0 +1,42 @@
+exit_code: 1
+duration_sec: 0.617
+environment_error: None
+error_kind: None
+failed_tests: ['safepatch_hidden/test_hidden_regression.py::test_explicit_total_takes_precedence_over_iterable_truthiness']
+timeout_seconds: 120
+container_name: None
+network_mode: none
+user: 1000:1000
+
+--- stdout ---
+F
+=================================== FAILURES ===================================
+________ test_explicit_total_takes_precedence_over_iterable_truthiness _________
+
+    def test_explicit_total_takes_precedence_over_iterable_truthiness():
+>       assert truth_value([], total=2) is True
+E       assert False is True
+E        +  where False = truth_value([], total=2)
+
+safepatch_hidden/test_hidden_regression.py:16: AssertionError
+=========================== short test summary info ============================
+FAILED safepatch_hidden/test_hidden_regression.py::test_explicit_total_takes_precedence_over_iterable_truthiness
+1 failed in 0.17s
+
+
+--- stderr ---
+
+
+--- traceback_summary ---
+=================================== FAILURES ===================================
+________ test_explicit_total_takes_precedence_over_iterable_truthiness _________
+
+    def test_explicit_total_takes_precedence_over_iterable_truthiness():
+>       assert truth_value([], total=2) is True
+E       assert False is True
+E        +  where False = truth_value([], total=2)
+
+safepatch_hidden/test_hidden_regression.py:16: AssertionError
+=========================== short test summary info ============================
+FAILED safepatch_hidden/test_hidden_regression.py::test_explicit_total_takes_precedence_over_iterable_truthiness
+1 failed in 0.17s

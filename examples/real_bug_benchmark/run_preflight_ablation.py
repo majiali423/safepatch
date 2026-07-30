@@ -124,8 +124,10 @@ def condition_summary(rows: list[dict[str, Any]], enabled: bool) -> dict[str, An
         "public_successes": sum(bool(row.get("public_pass")) for row in selected),
         "hidden_successes": sum(bool(row.get("hidden_pass")) for row in hidden_rows),
         "overall_successes": sum(bool(row.get("overall_pass")) for row in selected),
-        "first_patch_applicable": sum(
-            row.get("first_patch_applicable") is True for row in selected
+        "first_patch_applicable": (
+            sum(row.get("first_patch_applicable") is True for row in selected)
+            if enabled
+            else None
         ),
         "preflight_rejections": sum(int(row.get("preflight_failures") or 0) for row in selected),
         "apply_failures_after_preflight": sum(
@@ -195,10 +197,12 @@ def _condition_row(name: str, row: dict[str, Any]) -> str:
     apply_failures = (
         row["apply_failures_after_preflight"] + row["apply_failures_without_preflight"]
     )
+    first_applicable = row["first_patch_applicable"]
+    first_applicable_text = "N/A" if first_applicable is None else str(first_applicable)
     return (
         f"| {name} | {row['runs']} | {row['public_successes']} | "
         f"{row['hidden_successes']} | {row['overall_successes']} | "
-        f"{row['first_patch_applicable']} | {row['preflight_rejections']} | "
+        f"{first_applicable_text} | {row['preflight_rejections']} | "
         f"{apply_failures} | {row['repair_attempts']} | {row['tokens']} | "
         f"{row['duration_sec']} | {row['estimated_cost_usd']} |"
     )

@@ -1,0 +1,15 @@
+--- a/sanic/log.py
++++ b/sanic/log.py
+@@ -18,6 +18,12 @@
+             "handlers": ["access_console"],
+             "propagate": True,
+             "qualname": "sanic.access",
++        },
++        "sanic.root": {
++            "level": "INFO",
++            "handlers": ["console"],
++            "propagate": True,
++            "qualname": "sanic.root",
+         },
+     },
+     handlers={

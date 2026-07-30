@@ -194,6 +194,11 @@ V4-Pro 的 6 次分层小样本通过 6/6。这些是小规模、非配对的工
 preflight 后没有 apply 失败。`request_evidence` 只在 1/21 次运行中被采用，且
 没有使该次运行成功，因此它仍是实验机制，不作为准确率提升来源宣传。
 
+另一个冻结、交错顺序的 preflight 对照在 7 题上对每种条件各运行两次，共 28 次。
+开启组最终通过 11/14，关闭组通过 9/14；但两组均未出现 preflight rejection 或
+apply failure。因此观察到的差异不能归因于 preflight，本项目将其作为有价值的负结果
+保留，而不宣传成准确率提升。
+
 无需 Docker 或 API Key 即可验证已提交的 21 次实验结果：
 
 ```bash
@@ -203,13 +208,21 @@ python examples/real_bug_benchmark/verify_published_results.py
 若要重建并测试全部锁定的历史项目环境，请运行
 `python examples/real_bug_benchmark/verify.py`（需要 Docker）。
 
+独立复算公开的 preflight 对照结果：
+
+```bash
+python examples/real_bug_benchmark/verify_preflight_ablation.py
+```
+
 详见[验收报告](examples/real_bug_benchmark/ACCEPTANCE_REPORT.md)、
 [基准设计](examples/real_bug_benchmark/DESIGN.md)与
 [模型评测报告](examples/real_bug_benchmark/MODEL_EVAL_REPORT.md)。本轮结果见
 [多文件模型评测报告](examples/real_bug_benchmark/MULTIFILE_MODEL_EVAL_REPORT.md)和
 [21 次状态机稳定性报告](examples/real_bug_benchmark/SYNTHESIS_MODEL_EVAL_REPORT.md)，以及
 [脱敏公开证据包](examples/real_bug_benchmark/published/synthesis-21-run/README.md)和
-[失败案例解析](docs/FAILURE_CASE_STUDY.md)。
+[失败案例解析](docs/FAILURE_CASE_STUDY.md)。对照实验另见
+[完整解读报告](examples/real_bug_benchmark/PREFLIGHT_CONTROLLED_COMPARISON_REPORT.md)和
+[脱敏 28 次证据包](examples/real_bug_benchmark/published/preflight-ablation-28-run/README.md)。
 
 ## 快速开始
 
@@ -360,6 +373,7 @@ tests/                      单元 / 集成 / Docker E2E 测试
 | [Patch Applicability](docs/V0.3_PATCH_APPLICABILITY.md) | 预检 / regeneration 设计 |
 | [Demo](docs/DEMO.md) | 端到端演示指南 |
 | [真实 Bug 基准](examples/real_bug_benchmark/DESIGN.md) | 冻结选题与环境验收协议 |
+| [Preflight 受控对照](examples/real_bug_benchmark/PREFLIGHT_CONTROLLED_COMPARISON_REPORT.md) | 冻结 28 次开关实验及克制结论 |
 | [失败案例解析](docs/FAILURE_CASE_STUDY.md) | 为什么两个公开测试通过的补丁仍未满足隐藏语义 |
 | [Walkthrough](docs/WALKTHROUGH.md) | 概念性端到端说明 |
 | [v0.2 Release Notes](docs/V0.2_RELEASE_NOTES.md) | 既有发布说明 |
