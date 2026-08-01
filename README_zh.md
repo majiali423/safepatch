@@ -47,10 +47,12 @@ SafePatch 优先保证**可控修复**，而非开放式自治。产品路径刻
 - 每次只处理一个本地 Python + pytest 仓库
 - 模型没有 shell / 浏览器 / 网络工具
 - 审批前必须通过策略校验与精确补丁预检
-- Docker pytest 是 repair attempt 的唯一正确性判据
+- Docker pytest 是 repair attempt 的回归执行器；原本为绿的 baseline
+  本身不是需求的独立验证 oracle
 - 产品会话状态与隐藏测试评测状态分离
 
-当前产品标签：**v0.3.1**（精确补丁预检 / patch regeneration；apply 失败分类）。
+当前产品标签为 **v0.3.1**。下文可靠性改造仍是未发布的工作树改进，
+不构成新版本发布声明。
 
 ## 动机
 
@@ -144,8 +146,14 @@ flowchart LR
 
 ## 安全边界
 
-- 模型工具不能请求 shell、Docker 或网络
-- Pytest 以 `--network none`、非 root UID、资源上限与 `--rm` 运行
+- 模型工具不能请求 shell、Docker、直接写文件、浏览器或网络访问。
+- Docker pytest 禁止网络，并只挂载一次性、可写的测试副本；容器使用
+  `--network none`、capability drop、no-new-privileges、只读根文件系统、
+  非 root UID、资源上限与 `--rm`。这是纵深防御隔离，不是“完整安全沙箱”。
+- 主机访问配置的 LLM provider API 仍需要网络。仓库地图、选取的源码片段、
+  traceback 与 diff 可能发送给该提供商；可配置本地 OpenAI-compatible endpoint
+  以降低代码外发。
+- “本地仓库”不等于“全部推理离线”。
 - 宿主 API Key 不传入容器
 - Trace 会对疑似密钥字符串脱敏
 - 源码树保持不变；仅修补 `working_copy`
@@ -265,6 +273,7 @@ code-agent examples\buggy_calculator `
 | 6 | `PATCH_NOT_APPLICABLE` |
 | 7 | `PATCH_BASE_CHANGED` |
 | 8 | `READ_BUDGET_EXHAUSTED` |
+| 9 | `TESTS_PASSED_UNVERIFIED`（测试为绿，但需求缺少独立验证 oracle） |
 
 更多细节见 [Demo](docs/DEMO.md)。
 
@@ -376,6 +385,7 @@ tests/                      单元 / 集成 / Docker E2E 测试
 | [Preflight 受控对照](examples/real_bug_benchmark/PREFLIGHT_CONTROLLED_COMPARISON_REPORT.md) | 冻结 28 次开关实验及克制结论 |
 | [失败案例解析](docs/FAILURE_CASE_STUDY.md) | 为什么两个公开测试通过的补丁仍未满足隐藏语义 |
 | [Walkthrough](docs/WALKTHROUGH.md) | 概念性端到端说明 |
+| [下一版本说明](docs/NEXT_RELEASE_NOTES.md) | 未发布的可靠性改造，不承诺版本号 |
 | [v0.2 Release Notes](docs/V0.2_RELEASE_NOTES.md) | 既有发布说明 |
 | [Acceptance Report](docs/ACCEPTANCE_REPORT.md) | 验证层次（历史） |
 
@@ -383,17 +393,21 @@ tests/                      单元 / 集成 / Docker E2E 测试
 
 ```bash
 pip install -e ".[dev]"
-pytest
+python -m pytest
 ```
+
+当前验收快照（2026-08-01）：收集 191 个测试；190 个通过、1 个主机相关测试
+跳过，7 个 Docker E2E 均已真实执行。P0 覆盖包括审批 fail closed、声明/实际文件集合精确
+一致、green baseline 验证语义，以及 Docker 一次性测试副本隔离。
 
 依赖 Docker 的负向 E2E：
 
 ```bash
-pytest -m docker_e2e
+python -m pytest -m docker_e2e
 ```
 
 请勿提交 `.env`、session 目录或 `examples/llm_benchmark/results/`。
 
 ## 许可证
 
-本仓库尚未发布 SPDX 许可证文件。在添加许可证之前，请将代码视为 source-available。
+仓库所有者尚未选择或发布开源许可证。在作出决定前，不应假定拥有适用法律之外的授权。

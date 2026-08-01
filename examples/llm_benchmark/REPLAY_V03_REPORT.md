@@ -1,5 +1,8 @@
 # v0.3 Mismatch Diff Replay Report
 
+> Historical evidence only: scripted replay run on 2026-07-27. It demonstrates
+> a mechanism and is not a current model-quality or production-readiness claim.
+
 **Mode:** scripted / fake LLM using v0.2 Full12 real context-mismatch diffs.
 **Not counted** toward real-LLM success rates.
 
@@ -30,7 +33,7 @@ Trace event order:
 session_created -> repository_imported -> repo_map_generated -> baseline_test_finished -> model_request -> model_response -> patch_proposed -> patch_preflight_started -> patch_preflight_failed -> patch_regeneration_requested -> model_request -> model_response -> tool_call -> tool_result -> model_request -> model_response -> patch_proposed -> patch_preflight_started -> patch_preflight_succeeded -> approval_decision -> patch_applied -> pytest_finished -> session_finished
 ```
 
-result: `C:\Users\lili\project3\examples\llm_benchmark\results\replay_v03\bench01_div_zero`
+result: `<REPOSITORY_ROOT>\examples\llm_benchmark\results\replay_v03\bench01_div_zero`
 
 ### `bench05_red_herring`
 
@@ -49,7 +52,7 @@ Trace event order:
 session_created -> repository_imported -> repo_map_generated -> baseline_test_finished -> model_request -> model_response -> patch_proposed -> patch_preflight_started -> patch_preflight_failed -> patch_regeneration_requested -> model_request -> model_response -> tool_call -> tool_result -> model_request -> model_response -> patch_proposed -> patch_preflight_started -> patch_preflight_succeeded -> approval_decision -> patch_applied -> pytest_finished -> session_finished
 ```
 
-result: `C:\Users\lili\project3\examples\llm_benchmark\results\replay_v03\bench05_red_herring`
+result: `<REPOSITORY_ROOT>\examples\llm_benchmark\results\replay_v03\bench05_red_herring`
 
 Overall mechanism: **PASS**
 

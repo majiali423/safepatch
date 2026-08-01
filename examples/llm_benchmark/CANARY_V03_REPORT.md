@@ -1,5 +1,8 @@
 # v0.3 DeepSeek Canary Report (4 tasks)
 
+> Historical evidence only: frozen on 2026-07-27 at commit
+> `2370c388c98f024a2fa373983b673bd3d3f589b9`; not a current product claim.
+
 **Mode:** real `deepseek-chat`. Not dry-run / reference. Product/Prompt/tasks/hidden/reference untouched during this run.
 
 ## Freeze
@@ -31,8 +34,8 @@
 - repair_attempts == pytest_after_apply: **True** (1 == 1)
 - patch_apply_failures_after_preflight: **0**
 - recovered_from_v02_FAILED_MAX_ATTEMPTS: **True**
-- session: `C:\Users\lili\project3\examples\llm_benchmark\results\_sessions\bench01_div_zero\20260727T073625Z_bd358587\06c8264f4ace`
-- result: `C:\Users\lili\project3\examples\llm_benchmark\results\bench01_div_zero\20260727T073625Z_bd358587`
+- session: `<REPOSITORY_ROOT>\examples\llm_benchmark\results\_sessions\bench01_div_zero\20260727T073625Z_bd358587\06c8264f4ace`
+- result: `<REPOSITORY_ROOT>\examples\llm_benchmark\results\bench01_div_zero\20260727T073625Z_bd358587`
 
 ### `bench05_red_herring`
 - preflight fail never approved: **True** (approval_without_prior_preflight_success=0)
@@ -40,8 +43,8 @@
 - repair_attempts == pytest_after_apply: **True** (1 == 1)
 - patch_apply_failures_after_preflight: **0**
 - recovered_from_v02_FAILED_MAX_ATTEMPTS: **True**
-- session: `C:\Users\lili\project3\examples\llm_benchmark\results\_sessions\bench05_red_herring\20260727T073635Z_bcaa3a05\89d9ef1bf86c`
-- result: `C:\Users\lili\project3\examples\llm_benchmark\results\bench05_red_herring\20260727T073635Z_bcaa3a05`
+- session: `<REPOSITORY_ROOT>\examples\llm_benchmark\results\_sessions\bench05_red_herring\20260727T073635Z_bcaa3a05\89d9ef1bf86c`
+- result: `<REPOSITORY_ROOT>\examples\llm_benchmark\results\bench05_red_herring\20260727T073635Z_bcaa3a05`
 
 ### `bench06_split_total`
 - preflight fail never approved: **True** (approval_without_prior_preflight_success=0)
@@ -49,8 +52,8 @@
 - repair_attempts == pytest_after_apply: **True** (1 == 1)
 - patch_apply_failures_after_preflight: **0**
 - recovered_from_v02_FAILED_MAX_ATTEMPTS: **False**
-- session: `C:\Users\lili\project3\examples\llm_benchmark\results\_sessions\bench06_split_total\20260727T073642Z_4a422a06\c436bf42043b`
-- result: `C:\Users\lili\project3\examples\llm_benchmark\results\bench06_split_total\20260727T073642Z_4a422a06`
+- session: `<REPOSITORY_ROOT>\examples\llm_benchmark\results\_sessions\bench06_split_total\20260727T073642Z_4a422a06\c436bf42043b`
+- result: `<REPOSITORY_ROOT>\examples\llm_benchmark\results\bench06_split_total\20260727T073642Z_4a422a06`
 
 ### `bench12_slug_overfit`
 - preflight fail never approved: **True** (approval_without_prior_preflight_success=0)
@@ -58,8 +61,8 @@
 - repair_attempts == pytest_after_apply: **True** (1 == 1)
 - patch_apply_failures_after_preflight: **0**
 - recovered_from_v02_FAILED_MAX_ATTEMPTS: **False**
-- session: `C:\Users\lili\project3\examples\llm_benchmark\results\_sessions\bench12_slug_overfit\20260727T073654Z_1c00ca8f\aab288373451`
-- result: `C:\Users\lili\project3\examples\llm_benchmark\results\bench12_slug_overfit\20260727T073654Z_1c00ca8f`
+- session: `<REPOSITORY_ROOT>\examples\llm_benchmark\results\_sessions\bench12_slug_overfit\20260727T073654Z_1c00ca8f\aab288373451`
+- result: `<REPOSITORY_ROOT>\examples\llm_benchmark\results\bench12_slug_overfit\20260727T073654Z_1c00ca8f`
 
 ## Aggregate
 

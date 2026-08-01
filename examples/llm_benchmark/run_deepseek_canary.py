@@ -45,6 +45,16 @@ V02_FULL12 = {
     },
 }
 
+
+def report_path(value: object) -> str:
+    """Render local artifact paths relative to the repository in public reports."""
+    if not value:
+        return "—"
+    try:
+        return Path(str(value)).resolve().relative_to(ROOT.resolve()).as_posix()
+    except ValueError:
+        return "<EXTERNAL_PATH>"
+
 sys.path.insert(0, str(BENCH))
 sys.path.insert(0, str(ROOT))
 
@@ -238,10 +248,10 @@ def write_report(*, freeze: dict, rows: list[dict], drift: list[str]) -> None:
             f"**{r.get('recovered_from_v02_failed_max')}**"
         )
         lines.append(
-            f"- session: `{r.get('session_path')}`"
+            f"- session: `{report_path(r.get('session_path'))}`"
         )
         lines.append(
-            f"- result: `{r.get('result_path')}`"
+            f"- result: `{report_path(r.get('result_path'))}`"
         )
         lines.append("")
     n = len(rows)

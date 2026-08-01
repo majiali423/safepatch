@@ -1,5 +1,10 @@
 # SafePatch v0.3 Test Coverage Audit
 
+> Historical audit only. Its counts describe the snapshot reviewed when this
+> document was written, not the current suite. Use the current
+> `python -m pytest --collect-only -q` result for present-day coverage. The exact
+> commit/date was not recorded in the original audit and is not invented here.
+
 **Mode:** read-only audit. No product, benchmark, or test-suite changes in this phase.  
 **Evidence basis:** `tests/**/*.py` (pytest `--collect-only` → **87** collected), plus referenced eval artifacts outside pytest.  
 **Not used as a quality signal:** raw pass count (“86 passed”) alone.

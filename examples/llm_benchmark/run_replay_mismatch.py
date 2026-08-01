@@ -18,6 +18,16 @@ REPLAY_ROOT = BENCH / "replays" / "v02_full12_mismatch"
 OUT_ROOT = BENCH / "results" / "replay_v03"
 REPORT_PATH = BENCH / "REPLAY_V03_REPORT.md"
 
+
+def report_path(value: object) -> str:
+    """Render local artifact paths relative to the repository in public reports."""
+    if not value:
+        return "—"
+    try:
+        return Path(str(value)).resolve().relative_to(ROOT.resolve()).as_posix()
+    except ValueError:
+        return "<EXTERNAL_PATH>"
+
 sys.path.insert(0, str(ROOT))
 from code_agent.controller import TaskController  # noqa: E402
 from code_agent.eval.hidden import discover_hidden_dir, run_hidden_tests  # noqa: E402
@@ -300,7 +310,7 @@ def write_report(rows: list[dict], *, started_at: str) -> None:
         lines.append(" -> ".join(r.get("trace_event_order") or []))
         lines.append("```")
         lines.append("")
-        lines.append(f"result: `{r.get('result_path')}`")
+        lines.append(f"result: `{report_path(r.get('result_path'))}`")
         lines.append("")
     lines.append(
         f"Overall mechanism: **{'PASS' if all(r['mechanism_pass'] for r in rows) else 'FAIL'}**"
