@@ -16,7 +16,10 @@ def _tree_hash(paths: list[Path]) -> str:
         relative = path.relative_to(ROOT).as_posix()
         digest.update(relative.encode("utf-8"))
         digest.update(b"\0")
-        digest.update(path.read_bytes())
+        # Git checkouts may materialize Python sources with LF or CRLF. The
+        # benchmark content is the same in either case, so hash canonical LF
+        # bytes to keep the frozen fingerprint stable across CI platforms.
+        digest.update(path.read_bytes().replace(b"\r\n", b"\n"))
         digest.update(b"\0")
     return f"sha256:{digest.hexdigest()}"
 

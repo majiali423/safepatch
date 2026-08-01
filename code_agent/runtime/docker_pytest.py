@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import stat
 import subprocess
 import tempfile
 import time
@@ -106,6 +107,7 @@ class DockerPytestRunner:
                 test_copy,
                 ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache", "*.pyc"),
             )
+            _make_test_copy_writable(test_copy)
         except Exception as exc:  # noqa: BLE001
             shutil.rmtree(test_copy_parent, ignore_errors=True)
             return TestResult(
@@ -223,6 +225,17 @@ def _run_docker_cmd(
             stderr=err or (exc.stderr if isinstance(exc.stderr, str) else ""),
         ) from None
     return stdout or "", stderr or "", int(proc.returncode or 0)
+
+
+def _make_test_copy_writable(test_copy: Path) -> None:
+    """Allow fixed UID 1000 to write only inside the disposable test copy."""
+    write_bits = stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH
+    execute_bits = stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+    for path in (test_copy, *test_copy.rglob("*")):
+        mode = path.stat().st_mode | write_bits
+        if path.is_dir():
+            mode |= execute_bits
+        path.chmod(mode)
 
 
 def _force_remove_container(container_name: str | None) -> None:

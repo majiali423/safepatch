@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import stat
 import subprocess
 from pathlib import Path
 
@@ -167,6 +169,9 @@ def test_docker_runner_uses_and_removes_writable_test_copy(
         mount = cmd[cmd.index("-v") + 1]
         test_copy = Path(mount.removesuffix(":/work:rw"))
         observed["test_copy"] = test_copy
+        if os.name != "nt":
+            assert test_copy.stat().st_mode & stat.S_IWOTH
+            assert (test_copy / "mod.py").stat().st_mode & stat.S_IWOTH
         (test_copy / "mod.py").write_text("mutated by pytest\n", encoding="utf-8")
         (test_copy / "ordinary.tmp").write_text("allowed\n", encoding="utf-8")
         return "ok", "", 0

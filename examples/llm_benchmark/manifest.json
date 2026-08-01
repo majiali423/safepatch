@@ -15,9 +15,9 @@
   },
   "future_provider_matrix": [],
   "frozen_fingerprints": {
-    "task_tree": "sha256:f99643fcac9402b4c0e048f53cb97f3ffc8f7e4e37492f782cda612a0c0e69ea",
-    "hidden_test_tree": "sha256:620740f88c716cd11b17bbba71c488ca94084835572d3c90f440a15b203aaa13",
+    "task_tree": "sha256:e45cb498edc1ab1cf82c45f4d211dc04cbbc368bbea8dd51e15c0b1fa1ec69b9",
+    "hidden_test_tree": "sha256:dfe04772b603b9ae73e3236ba286a7e6bd34cd5a0e19d73792b4710f711f17a2",
     "system_prompt": "sha256:43d9e2fd253bbdfc0f7fb49076c18f8523426a7aef405dcc221d107d3c93ff69",
-    "benchmark_runner": "sha256:a2e10aea8665dadccfa279e33749bb017b2497d20e64e6202f85608944042174"
+    "benchmark_runner": "sha256:6871922e8ff9ad0a9e63b8513594809e2404d232cf2dbd3edebace2b17e2fda9"
   }
 }
