@@ -8,9 +8,9 @@ from pathlib import Path
 
 from code_agent.llm import (
     FORMAT_RETRY_HINT,
-    LLMClient,
     LLMError,
     ModelOutputError,
+    ModelProvider,
     raw_preview,
 )
 from code_agent.patching.applier import (
@@ -55,6 +55,7 @@ from code_agent.tools.request_evidence import (
     execute_request_evidence,
 )
 from code_agent.tracing.recorder import TraceRecorder
+from code_agent.workflow import ApprovalGate, PatchExecutionService, VerificationPolicy
 
 ApprovalFn = Callable[[ApprovalBinding, int], bool]
 MessageFn = Callable[[str], None]
@@ -66,7 +67,7 @@ class TaskController:
     def __init__(
         self,
         *,
-        llm: LLMClient,
+        llm: ModelProvider,
         runner: DockerPytestRunner | None = None,
         approve: ApprovalFn | None = None,
         say: MessageFn | None = None,
@@ -81,7 +82,8 @@ class TaskController:
     ) -> None:
         self.llm = llm
         self.runner = runner or DockerPytestRunner()
-        self.approve = approve or (lambda _binding, _i: True)
+        self.approve = approve
+        self.approval_gate = ApprovalGate(approve)
         self.say = say or (lambda _m: None)
         self.session_base = session_base
         self.max_analysis_steps = max_analysis_steps
@@ -92,6 +94,11 @@ class TaskController:
             allow_new_tests=allow_new_tests,
         )
         self.preflight_enabled = preflight_enabled
+        self.patch_execution = PatchExecutionService(
+            allow_test_changes=allow_test_changes,
+            allow_new_tests=allow_new_tests,
+            apply_fn=apply_proposal,
+        )
         self._wall_time = wall_time or time.time
         self._monotonic = monotonic or time.perf_counter
 
@@ -145,11 +152,25 @@ class TaskController:
 
                 session.status = SessionStatus.AWAITING_APPROVAL
                 next_attempt_no = session.attempts_used + 1
-                approved = self.approve(binding, next_attempt_no)
+                approval = self.approval_gate.decide(binding, next_attempt_no)
+                if approval.decision == "handler_missing":
+                    session.status = SessionStatus.REJECTED
+                    session.stop_reason = approval.stop_reason or "approval_handler_missing"
+                    session.last_error = "No approval handler was provided; patch was not applied"
+                    trace.emit(
+                        "approval_decision",
+                        attempt=next_attempt_no,
+                        decision="handler_missing",
+                        stop_reason=session.stop_reason,
+                        patch_hash=binding.patch_hash,
+                        working_tree_hash=binding.working_tree_hash,
+                    )
+                    break
+                approved = approval.approved
                 trace.emit(
                     "approval_decision",
                     attempt=next_attempt_no,
-                    decision="approve" if approved else "reject",
+                    decision=approval.decision,
                     patch_hash=binding.patch_hash,
                     working_tree_hash=binding.working_tree_hash,
                     high_risk=validation.high_risk,
@@ -194,12 +215,7 @@ class TaskController:
                     )
                     break
 
-                apply_result = apply_proposal(
-                    proposal,
-                    session.workspace_root,
-                    allow_test_changes=self.allow_test_changes,
-                    allow_new_tests=self.allow_new_tests,
-                )
+                apply_result = self.patch_execution.apply(proposal, session.workspace_root)
                 if not apply_result.ok:
                     if self.preflight_enabled:
                         session.patch_apply_failures_after_preflight += 1
@@ -334,9 +350,12 @@ class TaskController:
                     break
 
                 if test_result.passed:
-                    session.status = SessionStatus.SUCCEEDED
-                    session.stop_reason = "all_tests_passed"
-                    self.say("All tests passed.")
+                    status, stop_reason, message = VerificationPolicy.passing_status(
+                        session.baseline
+                    )
+                    session.status = status
+                    session.stop_reason = stop_reason
+                    self.say(message)
                     break
 
                 self.say(
@@ -712,7 +731,7 @@ class TaskController:
                     )
                     return None
                 continue
-            except (ToolError, Exception) as exc:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
                 result_text = f"ERROR: {exc}"
                 if response.tool in READ_TOOLS:
                     session.consecutive_read_budget_violations = 0
@@ -737,6 +756,11 @@ class TaskController:
                     tool=response.tool,
                     ok=False,
                     error=str(exc),
+                    error_kind=(
+                        exc.error_kind.value
+                        if isinstance(exc, ToolError)
+                        else "tool_execution_error"
+                    ),
                 )
 
             messages.append({"role": "assistant", "content": response.raw_text})

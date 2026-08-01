@@ -17,6 +17,10 @@ def test_docker_run_config_to_dict_and_cmd_are_same_source():
         "timeout_seconds": 120,
         "remove_container": True,
         "container_name": None,
+        "cap_drop": "ALL",
+        "no_new_privileges": True,
+        "read_only": True,
+        "tmpfs": "/tmp:rw,nosuid,nodev,noexec,size=64m",
         "pytest_argv": [
             "python",
             "-m",
@@ -33,6 +37,12 @@ def test_docker_run_config_to_dict_and_cmd_are_same_source():
     assert "--cpus" in cmd and cmd[cmd.index("--cpus") + 1] == "1"
     assert "--pids-limit" in cmd and cmd[cmd.index("--pids-limit") + 1] == "128"
     assert "--user" in cmd and cmd[cmd.index("--user") + 1] == "1000:1000"
+    assert "--cap-drop" in cmd and cmd[cmd.index("--cap-drop") + 1] == "ALL"
+    assert "--security-opt" in cmd
+    assert cmd[cmd.index("--security-opt") + 1] == "no-new-privileges"
+    assert "--read-only" in cmd
+    assert "--tmpfs" in cmd
+    assert cmd[cmd.index("--tmpfs") + 1] == "/tmp:rw,nosuid,nodev,noexec,size=64m"
     assert "--name" not in cmd
     assert cmd[-6:] == list(payload["pytest_argv"])
     assert "code-agent-pytest:local" in cmd

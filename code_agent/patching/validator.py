@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from code_agent.patching.test_integrity import check_test_integrity, is_pytest_config_path
 from code_agent.state import PatchProposal
@@ -103,6 +103,15 @@ def _parse_diff_files(diff_text: str) -> list[tuple[str | None, str | None]]:
     return files
 
 
+def _normalize_patch_path(path: str) -> str:
+    normalized = path.strip().replace("\\", "/")
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    if normalized.startswith(("a/", "b/")):
+        normalized = normalized[2:]
+    return PurePosixPath(normalized).as_posix()
+
+
 def _is_forbidden_path(path: str) -> str | None:
     lowered = path.replace("\\", "/").lower()
     name = Path(lowered).name
@@ -148,14 +157,21 @@ def validate_proposal(
         if new is None:
             errors.append(f"Deleting files is forbidden: {old}")
             continue
-        if old is not None and old != new:
+        normalized_old = _normalize_patch_path(old) if old is not None else None
+        normalized_new = _normalize_patch_path(new) if new is not None else None
+        if normalized_old is not None and normalized_old != normalized_new:
             errors.append(f"Renaming files is forbidden: {old} -> {new}")
             continue
 
-        path = new
+        path = normalized_new
+        assert path is not None
         touched.append(path)
 
-        if path.startswith("/") or ".." in Path(path).parts:
+        if (
+            PurePosixPath(path).is_absolute()
+            or PureWindowsPath(path).is_absolute()
+            or ".." in PurePosixPath(path).parts
+        ):
             errors.append(f"Path escapes workspace: {path}")
             continue
 
@@ -187,6 +203,8 @@ def validate_proposal(
             if not abs_path.exists():
                 errors.append(f"Modified file does not exist: {path}")
 
+    if len(touched) != len(set(touched)):
+        errors.append("Duplicate file entries in unified_diff")
     if len(set(touched)) > MAX_FILES:
         errors.append(f"Too many files changed (max {MAX_FILES})")
 
@@ -205,13 +223,23 @@ def validate_proposal(
             f"Too many changed lines: {added + deleted} (max {MAX_CHANGED_LINES})"
         )
 
-    for f in proposal.affected_files:
-        if f not in touched:
-            errors.append(f"affected_files entry not in diff: {f}")
+    declared = [_normalize_patch_path(str(path)) for path in proposal.affected_files]
+    if len(declared) != len(set(declared)):
+        errors.append("Duplicate entries in affected_files")
 
+    declared_set = set(declared)
     touched_set = set(touched)
+    undeclared = sorted(touched_set - declared_set)
+    declared_but_untouched = sorted(declared_set - touched_set)
+    if undeclared:
+        errors.append(f"Diff edits undeclared files: {', '.join(undeclared)}")
+    if declared_but_untouched:
+        errors.append(
+            "affected_files entries not in diff: " + ", ".join(declared_but_untouched)
+        )
+
     for path, revision in proposal.base_revisions.items():
-        normalized = path.replace("\\", "/").removeprefix("./")
+        normalized = _normalize_patch_path(path)
         if normalized not in touched_set:
             errors.append(f"base_revisions entry not in diff: {path}")
         if re.fullmatch(r"sha256:[0-9a-f]{64}", revision) is None:

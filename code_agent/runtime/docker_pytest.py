@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -95,9 +96,28 @@ class DockerPytestRunner:
         elif config.image != image:
             config = replace(config, image=image)
         self.last_run_config = config
-        host_path = str(workspace_root.resolve())
-        cmd = config.build_docker_cmd(host_path)
+        test_copy_parent = Path(
+            tempfile.mkdtemp(prefix="pytest-copy-", dir=str(workspace_root.resolve().parent))
+        )
+        test_copy = test_copy_parent / "working_copy"
+        try:
+            shutil.copytree(
+                workspace_root,
+                test_copy,
+                ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache", "*.pyc"),
+            )
+        except Exception as exc:  # noqa: BLE001
+            shutil.rmtree(test_copy_parent, ignore_errors=True)
+            return TestResult(
+                exit_code=-1,
+                stdout="",
+                stderr=str(exc),
+                duration_sec=0.0,
+                environment_error=f"TEST_ENVIRONMENT_ERROR: could not create test copy: {exc}",
+                error_kind="environment",
+            )
 
+        cmd = config.build_docker_cmd(str(test_copy.resolve()))
         started = time.time()
         try:
             stdout, stderr, returncode = _run_docker_cmd(
@@ -132,6 +152,8 @@ class DockerPytestRunner:
             if log_path is not None:
                 _write_log(log_path, result, config=config)
             return result
+        finally:
+            shutil.rmtree(test_copy_parent, ignore_errors=True)
 
         duration = time.time() - started
         env_err = None

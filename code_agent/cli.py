@@ -12,7 +12,7 @@ from code_agent.controller import TaskController
 from code_agent.envfile import load_dotenv
 from code_agent.llm import LLMClient
 from code_agent.runtime.docker_pytest import DockerPytestRunner
-from code_agent.state import ApprovalBinding
+from code_agent.state import ApprovalBinding, SessionStatus
 
 console = Console()
 
@@ -155,8 +155,13 @@ def main(argv: list[str] | None = None) -> int:
     console.print(Panel(json.dumps(summary, indent=2, ensure_ascii=False), title="summary"))
     console.print(f"Artifacts: {session.artifacts_dir}")
 
-    if session.status.value == "SUCCEEDED":
+    if session.status == SessionStatus.SUCCEEDED:
         return 0
+    if session.status == SessionStatus.TESTS_PASSED_UNVERIFIED:
+        console.print(
+            "[yellow]Tests passed, but the request has no independent verification oracle.[/yellow]"
+        )
+        return 9
     if session.status.value == "REJECTED":
         return 3
     if session.status.value in {"TEST_ENVIRONMENT_ERROR", "TEST_TIMEOUT"}:
@@ -196,7 +201,8 @@ def _prompt_approval(binding: ApprovalBinding, attempt: int) -> bool:
     console.print(f"[bold]Diagnosis[/bold]: {proposal.diagnosis}")
     console.print(f"[bold]Expected[/bold]: {proposal.expected_behavior}")
     console.print(f"[bold]Risk[/bold]: {proposal.risk_notes}")
-    console.print(f"[bold]Files[/bold]: {', '.join(proposal.affected_files)}")
+    console.print(f"[bold]Actual files[/bold]: {', '.join(validation.files)}")
+    console.print(f"[bold]Model-declared files[/bold]: {', '.join(proposal.affected_files)}")
     console.print(f"[bold]Tests[/bold]: {', '.join(proposal.tests_to_run)}")
     console.print()
     # Show full diff (including new/modified tests); risk flags come from validation.

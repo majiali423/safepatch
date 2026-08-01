@@ -5,7 +5,10 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from code_agent.patching.validator import ValidationResult
 
 # First versioned summary schema that includes the observability card.
 SUMMARY_SCHEMA_VERSION = 1
@@ -21,6 +24,7 @@ class SessionStatus(str, Enum):
     PATCH_APPLIED = "PATCH_APPLIED"
     TESTING = "TESTING"
     SUCCEEDED = "SUCCEEDED"
+    TESTS_PASSED_UNVERIFIED = "TESTS_PASSED_UNVERIFIED"
     FAILED_MAX_ATTEMPTS = "FAILED_MAX_ATTEMPTS"
     PATCH_NOT_APPLICABLE = "PATCH_NOT_APPLICABLE"
     PATCH_BASE_CHANGED = "PATCH_BASE_CHANGED"
@@ -41,6 +45,7 @@ class AnalysisPhase(str, Enum):
 
 TERMINAL_STATUSES = {
     SessionStatus.SUCCEEDED,
+    SessionStatus.TESTS_PASSED_UNVERIFIED,
     SessionStatus.FAILED_MAX_ATTEMPTS,
     SessionStatus.PATCH_NOT_APPLICABLE,
     SessionStatus.PATCH_BASE_CHANGED,
@@ -130,7 +135,7 @@ class ApprovalBinding:
     patch_hash: str
     working_tree_hash: str
     proposal: PatchProposal
-    validation: Any  # ValidationResult; typed loosely to avoid import cycles
+    validation: ValidationResult
 
     def to_dict(self) -> dict[str, Any]:
         validation = self.validation
@@ -407,7 +412,17 @@ class TaskSession:
 
     def to_summary(self) -> dict[str, Any]:
         baseline_passed = bool(self.baseline and self.baseline.passed)
-        final_passed = self.status == SessionStatus.SUCCEEDED
+        final_passed = self.status in {
+            SessionStatus.SUCCEEDED,
+            SessionStatus.TESTS_PASSED_UNVERIFIED,
+        }
+        request_verified = self.status == SessionStatus.SUCCEEDED
+        if request_verified:
+            verification_basis = "baseline_failure_resolved"
+        elif self.status == SessionStatus.TESTS_PASSED_UNVERIFIED:
+            verification_basis = "green_baseline_no_independent_oracle"
+        else:
+            verification_basis = None
         preflight_total = self.patch_preflight_successes + self.patch_preflight_failures
         preflight_rate = (
             self.patch_preflight_successes / preflight_total if preflight_total else None
@@ -419,6 +434,8 @@ class TaskSession:
             "changed_files": sorted(set(self.changed_files)),
             "baseline_tests_passed": baseline_passed,
             "final_tests_passed": final_passed,
+            "request_verified": request_verified,
+            "verification_basis": verification_basis,
             "stop_reason": self.stop_reason or _default_stop_reason(self.status),
             "consecutive_format_retries": self.consecutive_format_retries,
             "total_format_retries_used": self.total_format_retries_used,
@@ -472,6 +489,7 @@ class TaskSession:
 def _default_stop_reason(status: SessionStatus) -> str:
     mapping = {
         SessionStatus.SUCCEEDED: "all_tests_passed",
+        SessionStatus.TESTS_PASSED_UNVERIFIED: "tests_passed_unverified",
         SessionStatus.FAILED_MAX_ATTEMPTS: "max_patch_attempts_reached",
         SessionStatus.PATCH_NOT_APPLICABLE: "patch_not_applicable",
         SessionStatus.PATCH_BASE_CHANGED: "patch_base_changed",

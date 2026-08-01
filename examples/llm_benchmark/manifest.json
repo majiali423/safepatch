@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "benchmark_id": "safepatch-full12-x3",
+  "scope": {
+    "models": 1,
+    "fixed_micro_tasks": 12,
+    "repetitions": 3,
+    "self_authored": true,
+    "production_proof": false
+  },
+  "historical_run": {
+    "provider": "deepseek",
+    "model": "deepseek-chat",
+    "results_file": "FULL12_REPORT.md"
+  },
+  "future_provider_matrix": [],
+  "frozen_fingerprints": {
+    "task_tree": "sha256:f99643fcac9402b4c0e048f53cb97f3ffc8f7e4e37492f782cda612a0c0e69ea",
+    "hidden_test_tree": "sha256:620740f88c716cd11b17bbba71c488ca94084835572d3c90f440a15b203aaa13",
+    "system_prompt": "sha256:43d9e2fd253bbdfc0f7fb49076c18f8523426a7aef405dcc221d107d3c93ff69",
+    "benchmark_runner": "sha256:a2e10aea8665dadccfa279e33749bb017b2497d20e64e6202f85608944042174"
+  }
+}

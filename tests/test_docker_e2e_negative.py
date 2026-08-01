@@ -139,10 +139,10 @@ def test_external_network_is_blocked():
 
     def _inspect_while_running() -> None:
         for _ in range(80):
-            if (workspace / ".e2e_ready").exists():
+            inspected["network_mode"] = _inspect_network_mode(name)
+            if inspected["network_mode"] is not None:
                 break
             time.sleep(0.1)
-        inspected["network_mode"] = _inspect_network_mode(name)
 
     thread = threading.Thread(target=_inspect_while_running, daemon=True)
     thread.start()
@@ -186,6 +186,7 @@ from pathlib import Path
 
 def test_process_is_not_root():
     uid = os.geteuid()
+    print(f"E2E_UID={uid}")
     Path("/work/uid.txt").write_text(str(uid), encoding="utf-8")
     assert uid != 0
     assert uid == 1000
@@ -197,15 +198,15 @@ def test_process_is_not_root():
     log_path = tmp_path / "non_root.log"
     result = runner.run_pytest(workspace, log_path=log_path, config=cfg)
     assert result.exit_code == 0, (result.stdout, result.stderr)
-    uid_text = (workspace / "uid.txt").read_text(encoding="utf-8").strip()
-    assert uid_text == "1000"
-    assert "1000" in result.stdout or uid_text == "1000"
+    # The in-container test's uid == 1000 assertion is the evidence. Pytest's
+    # default fd capture intentionally omits the print from successful -q output.
+    assert not (workspace / "uid.txt").exists()
     assert not _container_exists(name)
     _evidence(
         tmp_path / "non_root_evidence.json",
         {
             "docker_config": cfg.to_dict(),
-            "geteuid": int(uid_text),
+            "geteuid": 1000,
             "result": {
                 "exit_code": result.exit_code,
                 "passed": result.passed,
@@ -326,6 +327,28 @@ def test_container_removed_after_timeout(tmp_path: Path):
     # Allow brief daemon settle, then confirm absence.
     time.sleep(0.5)
     assert not _container_exists(name)
+
+
+@pytest.mark.docker_e2e
+def test_pytest_side_effects_cannot_mutate_formal_working_copy(tmp_path: Path):
+    runner = _require_docker()
+    workspace = _write_repo(
+        tmp_path / "copy_isolation",
+        """
+from pathlib import Path
+
+def test_writes_are_confined_to_test_copy():
+    Path("/work/mod.py").write_text("mutated\\n", encoding="utf-8")
+    Path("/work/ordinary.tmp").write_text("temporary\\n", encoding="utf-8")
+    assert Path("/work/ordinary.tmp").read_text(encoding="utf-8") == "temporary\\n"
+""".lstrip(),
+    )
+    (workspace / "mod.py").write_text("ORIGINAL = True\n", encoding="utf-8")
+    before = (workspace / "mod.py").read_bytes()
+    result = runner.run_pytest(workspace)
+    assert result.exit_code == 0, (result.stdout, result.stderr)
+    assert (workspace / "mod.py").read_bytes() == before
+    assert not (workspace / "ordinary.tmp").exists()
 
 
 def test_no_host_pytest_fallback_when_docker_missing(monkeypatch, tmp_path: Path):

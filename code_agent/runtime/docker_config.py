@@ -40,6 +40,10 @@ class DockerRunConfig:
     # Optional unique name for tests/audit (e.g. code-agent-test-<uuid>).
     # Empty/None = Docker assigns an ephemeral name (product default).
     container_name: str | None = None
+    cap_drop: str = "ALL"
+    no_new_privileges: bool = True
+    read_only: bool = True
+    tmpfs: str = "/tmp:rw,nosuid,nodev,noexec,size=64m"
     pytest_argv: tuple[str, ...] = field(default_factory=lambda: DEFAULT_PYTEST_ARGV)
 
     def to_dict(self) -> dict[str, Any]:
@@ -66,6 +70,13 @@ class DockerRunConfig:
             [
                 "--network",
                 self.network_mode,
+                "--cap-drop",
+                self.cap_drop,
+                "--security-opt",
+                "no-new-privileges",
+                "--read-only",
+                "--tmpfs",
+                self.tmpfs,
                 "--memory",
                 self.memory,
                 "--cpus",
