@@ -25,6 +25,17 @@ FAILED_TEST_RE = re.compile(
 _CONTAINER_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$")
 _CONTAINER_NAME_PREFIX = "code-agent-pytest-"
 
+# Fixed wipe program for UID-1000-owned leftovers. Not user/model-controlled shell.
+_DOCKER_WIPE_PY = (
+    "import pathlib, shutil\n"
+    "root = pathlib.Path('/cleanup')\n"
+    "for child in list(root.iterdir()):\n"
+    "    if child.is_dir() and not child.is_symlink():\n"
+    "        shutil.rmtree(child)\n"
+    "    else:\n"
+    "        child.unlink(missing_ok=True)\n"
+)
+
 
 class DockerPytestRunner:
     """Controller-owned Docker pytest runner. Model cannot change these params."""
@@ -32,6 +43,8 @@ class DockerPytestRunner:
     def __init__(self, image: str = LOCAL_PYTEST_IMAGE) -> None:
         self.image = image
         self.last_run_config: DockerRunConfig | None = None
+        self.last_test_copy_parent: Path | None = None
+        self.last_cleanup_error: str | None = None
 
     def make_run_config(self, image: str) -> DockerRunConfig:
         """Create the config object shared by docker argv and trace."""
@@ -82,6 +95,8 @@ class DockerPytestRunner:
         for_hidden_tests — security params always come from DockerRunConfig.
         """
         self.last_run_config = None
+        self.last_test_copy_parent = None
+        self.last_cleanup_error = None
         ok, reason = self.preflight()
         if not ok:
             return TestResult(
@@ -109,82 +124,106 @@ class DockerPytestRunner:
         test_copy_parent = Path(
             tempfile.mkdtemp(prefix="pytest-copy-", dir=str(workspace_root.resolve().parent))
         )
+        self.last_test_copy_parent = test_copy_parent
         test_copy = test_copy_parent / "working_copy"
-        try:
-            shutil.copytree(
-                workspace_root,
-                test_copy,
-                ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache", "*.pyc"),
-            )
-            _prepare_test_copy_for_container_uid(test_copy)
-        except Exception as exc:  # noqa: BLE001
-            shutil.rmtree(test_copy_parent, ignore_errors=True)
-            return TestResult(
-                exit_code=-1,
-                stdout="",
-                stderr=str(exc),
-                duration_sec=0.0,
-                environment_error=f"TEST_ENVIRONMENT_ERROR: could not create test copy: {exc}",
-                error_kind="environment",
-            )
-
-        cmd = config.build_docker_cmd(str(test_copy.resolve()))
         started = time.time()
+        result: TestResult | None = None
         try:
-            stdout, stderr, returncode = _run_docker_cmd(
-                cmd, timeout_seconds=config.timeout_seconds
-            )
-        except subprocess.TimeoutExpired as exc:
-            # Kill client process (done inside helper) + force-remove named container.
-            _force_remove_container(config.container_name)
-            result = TestResult(
-                exit_code=-1,
-                stdout=_as_text(exc.stdout),
-                stderr="pytest timed out in Docker",
-                duration_sec=time.time() - started,
-                environment_error=(
-                    f"TEST_TIMEOUT: pytest exceeded {config.timeout_seconds}s"
-                ),
-                error_kind="timeout",
-            )
-            if log_path is not None:
-                _write_log(log_path, result, config=config)
-            return result
-        except Exception as exc:  # noqa: BLE001
-            _force_remove_container(config.container_name)
-            result = TestResult(
-                exit_code=-1,
-                stdout="",
-                stderr=str(exc),
-                duration_sec=time.time() - started,
-                environment_error=f"TEST_ENVIRONMENT_ERROR: {exc}",
-                error_kind="environment",
-            )
-            if log_path is not None:
-                _write_log(log_path, result, config=config)
-            return result
+            try:
+                shutil.copytree(
+                    workspace_root,
+                    test_copy,
+                    ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache", "*.pyc"),
+                )
+                _prepare_test_copy_for_container_uid(test_copy)
+            except Exception as exc:  # noqa: BLE001
+                result = TestResult(
+                    exit_code=-1,
+                    stdout="",
+                    stderr=str(exc),
+                    duration_sec=time.time() - started,
+                    environment_error=(
+                        f"TEST_ENVIRONMENT_ERROR: could not create test copy: {exc}"
+                    ),
+                    error_kind="environment",
+                )
+            else:
+                cmd = config.build_docker_cmd(str(test_copy.resolve()))
+                try:
+                    stdout, stderr, returncode = _run_docker_cmd(
+                        cmd, timeout_seconds=config.timeout_seconds
+                    )
+                except subprocess.TimeoutExpired as exc:
+                    _force_remove_container(config.container_name)
+                    result = TestResult(
+                        exit_code=-1,
+                        stdout=_as_text(exc.stdout),
+                        stderr="pytest timed out in Docker",
+                        duration_sec=time.time() - started,
+                        environment_error=(
+                            f"TEST_TIMEOUT: pytest exceeded {config.timeout_seconds}s"
+                        ),
+                        error_kind="timeout",
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    _force_remove_container(config.container_name)
+                    result = TestResult(
+                        exit_code=-1,
+                        stdout="",
+                        stderr=str(exc),
+                        duration_sec=time.time() - started,
+                        environment_error=f"TEST_ENVIRONMENT_ERROR: {exc}",
+                        error_kind="environment",
+                    )
+                else:
+                    duration = time.time() - started
+                    env_err = None
+                    error_kind = None
+                    combined = stdout + "\n" + stderr
+                    if (
+                        "No module named pytest" in combined
+                        or "No module named 'pytest'" in combined
+                    ):
+                        env_err = "TEST_ENVIRONMENT_ERROR: pytest missing in container"
+                        error_kind = "environment"
+                    result = TestResult(
+                        exit_code=returncode,
+                        stdout=stdout,
+                        stderr=stderr,
+                        duration_sec=duration,
+                        failed_tests=_extract_failed_tests(combined),
+                        traceback_summary=_extract_traceback_summary(combined),
+                        environment_error=env_err,
+                        error_kind=error_kind,
+                    )
         finally:
-            shutil.rmtree(test_copy_parent, ignore_errors=True)
+            cleanup_error = _remove_disposable_test_copy(test_copy_parent, image=image)
+            if cleanup_error is not None:
+                self.last_cleanup_error = cleanup_error
+                if result is None:
+                    result = TestResult(
+                        exit_code=-1,
+                        stdout="",
+                        stderr=cleanup_error,
+                        duration_sec=time.time() - started,
+                        environment_error=(
+                            "TEST_ENVIRONMENT_ERROR: disposable test copy "
+                            f"cleanup failed: {cleanup_error}"
+                        ),
+                        error_kind="environment",
+                    )
+                else:
+                    result = _with_cleanup_failure(result, cleanup_error)
 
-        duration = time.time() - started
-        env_err = None
-        error_kind = None
-        combined = stdout + "\n" + stderr
-        if "No module named pytest" in combined or "No module named 'pytest'" in combined:
-            env_err = "TEST_ENVIRONMENT_ERROR: pytest missing in container"
-            error_kind = "environment"
-        result = TestResult(
-            exit_code=returncode,
-            stdout=stdout,
-            stderr=stderr,
-            duration_sec=duration,
-            failed_tests=_extract_failed_tests(combined),
-            traceback_summary=_extract_traceback_summary(combined),
-            environment_error=env_err,
-            error_kind=error_kind,
-        )
+        assert result is not None
         if log_path is not None:
-            _write_log(log_path, result, config=config)
+            _write_log(
+                log_path,
+                result,
+                config=config,
+                test_copy_parent=self.last_test_copy_parent,
+                cleanup_error=self.last_cleanup_error,
+            )
         return result
 
     def _resolve_image(self) -> str | None:
@@ -281,6 +320,126 @@ def _prepare_test_copy_for_container_uid(test_copy: Path) -> None:
 _make_test_copy_writable = _prepare_test_copy_for_container_uid
 
 
+def _remove_disposable_test_copy(parent: Path, *, image: str) -> str | None:
+    """Remove one disposable parent directory. Return error text on failure.
+
+    Host ``rmtree`` first. If container UID 1000 created non-writable dirs
+    (e.g. ``__pycache__``), fall back to a locked-down Docker wipe as UID 1000
+    that mounts only ``parent / "working_copy"`` (never the private parent, the
+    formal workspace, or the workspace parent). After wipe, the host removes the
+    emptied working_copy, then the emptied parent, and confirms parent is gone.
+    """
+    if not parent.exists():
+        return None
+
+    try:
+        shutil.rmtree(parent)
+    except OSError:
+        pass
+    else:
+        if not parent.exists():
+            return None
+
+    test_copy = parent / "working_copy"
+    wipe_error: str | None = None
+    try:
+        if test_copy.exists():
+            _docker_wipe_as_uid_1000(test_copy, image=image)
+    except Exception as exc:  # noqa: BLE001
+        wipe_error = str(exc)
+
+    try:
+        if test_copy.exists():
+            shutil.rmtree(test_copy)
+        if parent.exists():
+            parent.rmdir()
+    except OSError as exc:
+        if parent.exists():
+            detail = f"{exc}"
+            if wipe_error:
+                detail = f"{detail}; docker wipe: {wipe_error}"
+            return detail
+
+    if parent.exists():
+        detail = f"path still exists after cleanup: {parent}"
+        if wipe_error:
+            detail = f"{detail}; docker wipe: {wipe_error}"
+        return detail
+    return None
+
+
+def _docker_wipe_as_uid_1000(test_copy: Path, *, image: str) -> None:
+    """Clear contents of disposable ``working_copy`` as UID 1000; never delete mount root."""
+    if not test_copy.exists():
+        return
+    name = f"code-agent-cleanup-{uuid.uuid4().hex}"
+    host = str(test_copy.resolve())
+    cmd = [
+        "docker",
+        "run",
+        "--rm",
+        "--name",
+        name,
+        "--network",
+        "none",
+        "--cap-drop",
+        "ALL",
+        "--security-opt",
+        "no-new-privileges",
+        "--read-only",
+        "--tmpfs",
+        "/tmp:rw,nosuid,nodev,noexec,size=16m",
+        "--user",
+        "1000:1000",
+        "-v",
+        f"{host}:/cleanup:rw",
+        "-w",
+        "/cleanup",
+        image,
+        "python",
+        "-c",
+        _DOCKER_WIPE_PY,
+    ]
+    proc = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        timeout=60,
+        env=_sanitized_subprocess_env(),
+    )
+    if proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout or "docker wipe failed").strip()
+        raise RuntimeError(detail.splitlines()[0] if detail else "docker wipe failed")
+
+
+def _with_cleanup_failure(result: TestResult, cleanup_error: str) -> TestResult:
+    """Attach cleanup failure without erasing original pytest stdout/stderr."""
+    note = (
+        "TEST_ENVIRONMENT_ERROR: disposable test copy cleanup failed: "
+        f"{cleanup_error}"
+    )
+    env = result.environment_error
+    environment_error = f"{env}; {note}" if env else note
+    stderr = result.stderr
+    if note not in stderr:
+        stderr = f"{stderr}\n{note}" if stderr else note
+    error_kind = result.error_kind if result.error_kind == "timeout" else "environment"
+    exit_code = result.exit_code if result.exit_code != 0 else -1
+    return TestResult(
+        exit_code=exit_code,
+        stdout=result.stdout,
+        stderr=stderr,
+        duration_sec=result.duration_sec,
+        failed_tests=list(result.failed_tests),
+        traceback_summary=result.traceback_summary,
+        environment_error=environment_error,
+        error_kind=error_kind,
+    )
+
+
 def _force_remove_container(container_name: str | None) -> None:
     """Best-effort cleanup when --rm may not run after a host-side kill."""
     if not container_name:
@@ -371,13 +530,28 @@ def _write_log(
     result: TestResult,
     *,
     config: DockerRunConfig | None = None,
+    test_copy_parent: Path | None = None,
+    cleanup_error: str | None = None,
 ) -> None:
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    log_path.write_text(_format_log(result, config=config), encoding="utf-8", newline="\n")
+    log_path.write_text(
+        _format_log(
+            result,
+            config=config,
+            test_copy_parent=test_copy_parent,
+            cleanup_error=cleanup_error,
+        ),
+        encoding="utf-8",
+        newline="\n",
+    )
 
 
 def _format_log(
-    result: TestResult, *, config: DockerRunConfig | None = None
+    result: TestResult,
+    *,
+    config: DockerRunConfig | None = None,
+    test_copy_parent: Path | None = None,
+    cleanup_error: str | None = None,
 ) -> str:
     parts = [
         f"exit_code: {result.exit_code}",
@@ -393,6 +567,10 @@ def _format_log(
             f"network_mode: {config.network_mode}",
             f"user: {config.user}",
         ]
+    if test_copy_parent is not None:
+        parts.append(f"test_copy_parent: {test_copy_parent}")
+    if cleanup_error is not None:
+        parts.append(f"cleanup_error: {cleanup_error}")
     parts += [
         "",
         "--- stdout ---",
