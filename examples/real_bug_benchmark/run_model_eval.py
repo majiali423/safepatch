@@ -39,12 +39,17 @@ sys.path.insert(0, str(ROOT))
 
 from code_agent.controller import TaskController  # noqa: E402
 from code_agent.envfile import load_dotenv  # noqa: E402
+from code_agent.eval.isolation import (  # noqa: E402
+    isolated_eval_copy,
+    workspace_content_fingerprint,
+)
 from code_agent.llm import SYSTEM_PROMPT, LLMClient  # noqa: E402
 from code_agent.runtime.docker_config import DockerRunConfig  # noqa: E402
 from code_agent.runtime.docker_pytest import (  # noqa: E402
     DockerPytestRunner,
     _sanitized_subprocess_env,
 )
+from code_agent.state import TestResult  # noqa: E402
 
 load_dotenv(ROOT / ".env")
 
@@ -184,6 +189,38 @@ def apply_patch_inside_workspace(workspace: Path, patch_path: Path) -> None:
     )
 
 
+def run_hidden_evaluation(
+    *,
+    workspace_root: Path,
+    hidden_patch: Path,
+    image: str,
+    hidden_command: list[str],
+    log_path: Path,
+    runner: Any | None = None,
+) -> TestResult:
+    """Run hidden tests on an isolated copy; never mutate ``workspace_root``.
+
+    ``hidden_test.log`` and caller-owned result JSON stay outside the eval copy.
+    The eval copy is always removed when the isolation context exits, including
+    after copytree, patch injection, Docker invocation, or result-parsing failures.
+    """
+    before = workspace_content_fingerprint(workspace_root)
+    with isolated_eval_copy(workspace_root) as eval_copy:
+        apply_patch_inside_workspace(eval_copy, hidden_patch)
+        hidden_runner = runner or TaskImageRunner(
+            image=image,
+            test_command=hidden_command,
+        )
+        result = hidden_runner.run_pytest(eval_copy, log_path=log_path)
+    after = workspace_content_fingerprint(workspace_root)
+    if after != before:
+        raise RuntimeError(
+            "product workspace changed during hidden evaluation; "
+            "hidden patch must only touch the isolated eval copy"
+        )
+    return result
+
+
 def estimate_cost(usage: dict[str, Any], *, model: str = "deepseek-v4-flash") -> dict[str, Any]:
     prompt = usage.get("prompt_tokens")
     completion = usage.get("completion_tokens")
@@ -269,22 +306,24 @@ def run_one(
             preflight_enabled=preflight_enabled,
         )
         session = controller.run(source, task["prompt"])
+        # Capture product status before any hidden evaluation. Hidden results
+        # must never enter agent prompts, product traces, SessionStatus, or
+        # subsequent repair loops.
+        product_status_before_hidden = session.status
         hidden_command = task.get("hidden_test_command")
         hidden_result = None
         if hidden_command:
-            repair_workspace = session.workspace_root
-            apply_patch_inside_workspace(
-                repair_workspace,
-                task_dir / task["hidden_test_patch"],
-            )
-            hidden_runner = TaskImageRunner(
+            hidden_result = run_hidden_evaluation(
+                workspace_root=session.workspace_root,
+                hidden_patch=task_dir / task["hidden_test_patch"],
                 image=acceptance["image"]["tag"],
-                test_command=hidden_command,
-            )
-            hidden_result = hidden_runner.run_pytest(
-                repair_workspace,
+                hidden_command=hidden_command,
                 log_path=output / "hidden_test.log",
             )
+            if session.status != product_status_before_hidden:
+                raise RuntimeError(
+                    "hidden evaluation must not mutate product SessionStatus"
+                )
 
     summary = session.to_summary()
     usage = summary["observability"]["model"]["usage"]
