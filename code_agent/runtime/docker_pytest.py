@@ -7,6 +7,7 @@ import stat
 import subprocess
 import tempfile
 import time
+import uuid
 from dataclasses import replace
 from pathlib import Path
 
@@ -20,6 +21,9 @@ FAILED_TEST_RE = re.compile(
     r"^(FAILED|ERROR)\s+(\S+?)(?:\s+-|$)",
     re.MULTILINE,
 )
+# Docker allows [a-zA-Z0-9][a-zA-Z0-9_.-]*; keep well under the usual 63-char cap.
+_CONTAINER_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$")
+_CONTAINER_NAME_PREFIX = "code-agent-pytest-"
 
 
 class DockerPytestRunner:
@@ -96,6 +100,11 @@ class DockerPytestRunner:
             config = self.make_run_config(image)
         elif config.image != image:
             config = replace(config, image=image)
+        # Every real docker run gets a unique, non-user-controlled name so
+        # timeout / CLI-error cleanup can target exactly this container.
+        config = replace(
+            config, container_name=allocate_container_name(config.container_name)
+        )
         self.last_run_config = config
         test_copy_parent = Path(
             tempfile.mkdtemp(prefix="pytest-copy-", dir=str(workspace_root.resolve().parent))
@@ -107,7 +116,7 @@ class DockerPytestRunner:
                 test_copy,
                 ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache", "*.pyc"),
             )
-            _make_test_copy_writable(test_copy)
+            _prepare_test_copy_for_container_uid(test_copy)
         except Exception as exc:  # noqa: BLE001
             shutil.rmtree(test_copy_parent, ignore_errors=True)
             return TestResult(
@@ -227,15 +236,49 @@ def _run_docker_cmd(
     return stdout or "", stderr or "", int(proc.returncode or 0)
 
 
-def _make_test_copy_writable(test_copy: Path) -> None:
-    """Allow fixed UID 1000 to write only inside the disposable test copy."""
-    write_bits = stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH
-    execute_bits = stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+def allocate_container_name(explicit: str | None = None) -> str:
+    """Allocate a Docker-safe container name for one ``run_pytest`` invocation.
+
+    - ``None`` / empty / unsafe → ``code-agent-pytest-<uuid>`` (product default).
+    - Explicit names that already match Docker naming rules are preserved so
+      audits and tests can pin a known name; they are never taken from model input.
+    """
+    if explicit and _CONTAINER_NAME_RE.fullmatch(explicit):
+        return explicit
+    return f"{_CONTAINER_NAME_PREFIX}{uuid.uuid4().hex}"
+
+
+def _prepare_test_copy_for_container_uid(test_copy: Path) -> None:
+    """Make a one-shot test copy usable by fixed non-root container UID 1000.
+
+    Only mutates the disposable test copy — never the formal working copy.
+    Adds read+write for usr/grp/oth so UID 1000 can read ``0600``/``0400`` files
+    and rewrite pytest artifacts; directories also get execute (traverse). Existing
+    file executable bits are preserved; ordinary source is not made executable.
+    The private temp parent directory is not widened. This is not a full sandbox.
+    """
+    read_write = (
+        stat.S_IRUSR
+        | stat.S_IWUSR
+        | stat.S_IRGRP
+        | stat.S_IWGRP
+        | stat.S_IROTH
+        | stat.S_IWOTH
+    )
+    dir_traverse = stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
     for path in (test_copy, *test_copy.rglob("*")):
-        mode = path.stat().st_mode | write_bits
+        current = stat.S_IMODE(path.stat().st_mode)
+        mode = current | read_write
         if path.is_dir():
-            mode |= execute_bits
+            mode |= dir_traverse
+        else:
+            # Preserve prior execute bits only; do not add execute to normal files.
+            mode = (mode & ~dir_traverse) | (current & dir_traverse)
         path.chmod(mode)
+
+
+# Backward-compatible alias for older imports/tests.
+_make_test_copy_writable = _prepare_test_copy_for_container_uid
 
 
 def _force_remove_container(container_name: str | None) -> None:

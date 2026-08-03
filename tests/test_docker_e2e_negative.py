@@ -220,8 +220,8 @@ def test_process_is_not_root():
 
 @pytest.mark.docker_e2e
 def test_timeout_returns_independent_timeout_kind(tmp_path: Path):
+    """Product-default config (container_name=None) must still allocate and clean up."""
     runner = _require_docker()
-    name = _unique_name()
     workspace = _write_repo(
         tmp_path / "timeout",
         """
@@ -232,11 +232,9 @@ def test_never_finishes():
 """.lstrip(),
     )
     image = runner._resolve_image()  # noqa: SLF001
-    cfg = replace(
-        runner.make_run_config(image),
-        timeout_seconds=2,
-        container_name=name,
-    )
+    # Intentionally do not inject container_name — exercise product default path.
+    cfg = replace(runner.make_run_config(image), timeout_seconds=2)
+    assert cfg.container_name is None
     assert DockerRunConfig(image=image).timeout_seconds == 120  # product default
     assert cfg.timeout_seconds == 2
 
@@ -255,15 +253,42 @@ def test_never_finishes():
     assert result.error_kind != "environment"
     assert elapsed < 20
     assert result.duration_sec >= 1.5
+    assert runner.last_run_config is not None
+    name = runner.last_run_config.container_name
+    assert name and name.startswith("code-agent-pytest-")
     log_text = log_path.read_text(encoding="utf-8")
     assert "timeout_seconds: 2" in log_text
     assert "TEST_TIMEOUT" in log_text
+    assert f"container_name: {name}" in log_text
+    # docker inspect should report the name no longer exists.
+    inspect = subprocess.run(
+        ["docker", "inspect", name],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        env=_sanitized_subprocess_env(),
+    )
+    assert inspect.returncode != 0
     assert not _container_exists(name)
+    running = subprocess.run(
+        ["docker", "ps", "--filter", f"name=^{name}$", "--format", "{{.Names}}"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        env=_sanitized_subprocess_env(),
+    )
+    assert name not in (running.stdout or "")
 
     _evidence(
         tmp_path / "timeout_evidence.json",
         {
-            "docker_config": cfg.to_dict(),
+            "docker_config": runner.last_run_config.to_dict(),
+            "allocated_container_name": name,
+            "docker_inspect_returncode": inspect.returncode,
             "result": {
                 "exit_code": result.exit_code if result.exit_code >= 0 else None,
                 "passed": result.passed,
@@ -311,21 +336,30 @@ def test_container_removed_after_pytest_failure(tmp_path: Path):
 @pytest.mark.docker_e2e
 def test_container_removed_after_timeout(tmp_path: Path):
     runner = _require_docker()
-    name = _unique_name()
     workspace = _write_repo(
         tmp_path / "timeout_cleanup",
         "import time\n\ndef test_never_finishes():\n    time.sleep(30)\n",
     )
     image = runner._resolve_image()  # noqa: SLF001
-    cfg = replace(
-        runner.make_run_config(image),
-        timeout_seconds=2,
-        container_name=name,
-    )
+    cfg = replace(runner.make_run_config(image), timeout_seconds=2)
+    assert cfg.container_name is None
     result = runner.run_pytest(workspace, config=cfg)
     assert result.error_kind == "timeout"
+    assert runner.last_run_config is not None
+    name = runner.last_run_config.container_name
+    assert name and name.startswith("code-agent-pytest-")
     # Allow brief daemon settle, then confirm absence.
     time.sleep(0.5)
+    inspect = subprocess.run(
+        ["docker", "inspect", name],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        env=_sanitized_subprocess_env(),
+    )
+    assert inspect.returncode != 0
     assert not _container_exists(name)
 
 

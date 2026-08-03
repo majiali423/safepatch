@@ -118,10 +118,11 @@ def test_declared_file_order_is_irrelevant(tmp_path: Path) -> None:
 
 
 def test_duplicate_and_cross_platform_declarations_cannot_bypass_check(tmp_path: Path) -> None:
-    duplicate = _validation(tmp_path, affected_files=["mod.py", ".\\a\\mod.py"])
+    # Real ``a/`` path components are preserved; collision uses ./ vs plain path.
+    duplicate = _validation(tmp_path, affected_files=["mod.py", "./mod.py"])
     assert not duplicate.ok
     assert any("Duplicate" in error for error in duplicate.errors)
-    normalized = _validation(tmp_path / "normalized", affected_files=[".\\b\\mod.py"])
+    normalized = _validation(tmp_path / "normalized", affected_files=[".\\mod.py"])
     assert normalized.ok, normalized.errors
 
 

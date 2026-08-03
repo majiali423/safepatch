@@ -104,10 +104,15 @@ def _parse_diff_files(diff_text: str) -> list[tuple[str | None, str | None]]:
 
 
 def _normalize_patch_path(path: str) -> str:
+    """Normalize a repo-relative path without stripping real ``a/`` or ``b/`` dirs.
+
+    Synthetic git prefixes ``a/`` / ``b/`` are removed only while parsing
+    ``---`` / ``+++`` headers in ``_parse_diff_files``. This helper only trims
+    whitespace, converts backslashes, strips leading ``./``, and returns a
+    POSIX relative path.
+    """
     normalized = path.strip().replace("\\", "/")
     while normalized.startswith("./"):
-        normalized = normalized[2:]
-    if normalized.startswith(("a/", "b/")):
         normalized = normalized[2:]
     return PurePosixPath(normalized).as_posix()
 

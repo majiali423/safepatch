@@ -37,8 +37,10 @@ class DockerRunConfig:
     user: str = "1000:1000"
     timeout_seconds: int = 120
     remove_container: bool = True
-    # Optional unique name for tests/audit (e.g. code-agent-test-<uuid>).
-    # Empty/None = Docker assigns an ephemeral name (product default).
+    # Optional name. Product default None means DockerPytestRunner allocates a
+    # unique ``code-agent-pytest-<uuid>`` name immediately before each run so
+    # timeout / CLI-error paths can ``docker rm -f`` that exact container.
+    # Explicit Docker-safe names are preserved; unsafe values are replaced.
     container_name: str | None = None
     cap_drop: str = "ALL"
     no_new_privileges: bool = True
