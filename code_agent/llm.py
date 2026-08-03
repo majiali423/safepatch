@@ -422,8 +422,12 @@ def _validate_tool_arguments(tool: str, args: dict[str, Any], *, raw_text: str) 
         if not isinstance(args.get("path"), str) or not args["path"]:
             fail("read_file.path must be a non-empty string")
         for field in ("start_line", "end_line"):
-            if field in args and args[field] is not None and not isinstance(args[field], int):
-                fail(f"read_file.{field} must be an integer")
+            if field in args and args[field] is not None:
+                args[field] = _coerce_line_number(args[field], field=f"read_file.{field}", fail=fail)
+        start = args.get("start_line")
+        end = args.get("end_line")
+        if isinstance(start, int) and isinstance(end, int) and start > end:
+            fail("read_file.start_line must be <= end_line")
         return
     required_strings = {
         "search_text": "query",
@@ -435,6 +439,27 @@ def _validate_tool_arguments(tool: str, args: dict[str, Any], *, raw_text: str) 
         if not isinstance(args.get(field), str) or not args[field]:
             fail(f"{tool}.{field} must be a non-empty string")
         return
-    # Proposal validation has a separate, more specific error class.
-    if tool in {"propose_patch", "propose_edit", "request_evidence"}:
+    if tool == "request_evidence":
+        for field in ("start_line", "end_line"):
+            if field in args and args[field] is not None:
+                args[field] = _coerce_line_number(
+                    args[field], field=f"request_evidence.{field}", fail=fail
+                )
         return
+    # Proposal validation has a separate, more specific error class.
+    if tool in {"propose_patch", "propose_edit"}:
+        return
+
+
+def _coerce_line_number(value: Any, *, field: str, fail: Callable[[str], None]) -> int:
+    """Normalize legacy pure-decimal line strings; reject bool/float/negatives."""
+    if isinstance(value, bool):
+        fail(f"{field} must be an integer")
+    if isinstance(value, int):
+        if value < 0:
+            fail(f"{field} must be a non-negative integer")
+        return value
+    if isinstance(value, str) and re.fullmatch(r"[0-9]+", value):
+        return int(value)
+    fail(f"{field} must be an integer")
+    raise AssertionError("unreachable")
