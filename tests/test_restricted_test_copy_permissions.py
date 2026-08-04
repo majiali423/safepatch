@@ -11,8 +11,13 @@ from pathlib import Path
 import pytest
 
 from code_agent.runtime.docker_pytest import (
+    _PLACEHOLDER_PARENT,
+    _PLACEHOLDER_WORKING,
     DockerPytestRunner,
+    _docker_wipe_as_uid_1000,
+    _format_cleanup_oserror,
     _prepare_test_copy_for_container_uid,
+    _redact_disposable_paths,
     _remove_disposable_test_copy,
     _with_cleanup_failure,
 )
@@ -361,6 +366,12 @@ def test_cleanup_failure_is_not_swallowed(
     log_text = log_path.read_text(encoding="utf-8")
     assert "cleanup_error:" in log_text
     assert "blocked:" in log_text
+    assert str(runner.last_test_copy_parent.resolve()) not in log_text
+    assert str(workspace.resolve()) not in log_text
+    assert "test_copy_created: true" in log_text
+    assert f"test_copy_id: {runner.last_test_copy_parent.name}" in log_text
+    assert "test_copy_parent:" not in log_text
+    assert f"test_copy_parent: {runner.last_test_copy_parent}" not in log_text
 
 
 def test_with_cleanup_failure_preserves_original_streams() -> None:
@@ -476,3 +487,182 @@ def test_container_created_artifacts_are_removed(tmp_path: Path) -> None:
     assert runner.last_test_copy_parent is not None
     assert not runner.last_test_copy_parent.exists()
     assert not (workspace / "artifact.txt").exists()
+
+
+def test_success_log_has_no_workspace_absolute_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace = _workspace(tmp_path)
+    runner = DockerPytestRunner()
+    monkeypatch.setattr(runner, "preflight", lambda: (True, "ok"))
+    monkeypatch.setattr(runner, "_resolve_image", lambda: "code-agent-pytest:local")
+    monkeypatch.setattr(
+        "code_agent.runtime.docker_pytest._run_docker_cmd",
+        lambda cmd, timeout_seconds: ("ok", "", 0),
+    )
+    log_path = tmp_path / "ok.log"
+    result = runner.run_pytest(workspace, log_path=log_path)
+    assert result.passed
+    log_text = log_path.read_text(encoding="utf-8")
+    assert str(workspace.resolve()) not in log_text
+    assert runner.last_test_copy_parent is not None
+    assert str(runner.last_test_copy_parent.resolve()) not in log_text
+    assert str((runner.last_test_copy_parent / "working_copy").resolve()) not in log_text
+    assert "test_copy_created: true" in log_text
+    assert f"test_copy_id: {runner.last_test_copy_parent.name}" in log_text
+    assert "container_name:" in log_text
+    assert "timeout_seconds:" in log_text
+    assert "network_mode:" in log_text
+    assert isinstance(runner.last_test_copy_parent, Path)
+
+
+def test_redact_posix_and_windows_path_spellings(tmp_path: Path) -> None:
+    parent = tmp_path / "pytest-copy-abc123"
+    working = parent / "working_copy"
+    parent.mkdir()
+    working.mkdir()
+    posix = parent.resolve().as_posix()
+    windows = str(parent.resolve()).replace("/", "\\")
+    mixed = (
+        f"failed at {posix}/working_copy and also "
+        f"{windows}\\working_copy then {windows}"
+    )
+    redacted = _redact_disposable_paths(mixed, parent=parent)
+    assert posix not in redacted
+    assert windows not in redacted
+    assert str(working.resolve()) not in redacted
+    assert _PLACEHOLDER_WORKING in redacted
+    assert _PLACEHOLDER_PARENT in redacted
+    assert "failed at" in redacted
+
+
+def test_format_cleanup_oserror_keeps_type_and_errno() -> None:
+    err = PermissionError(13, "Permission denied")
+    err.filename = r"C:\Users\secret\pytest-copy-x\working_copy\pkg"
+    text = _format_cleanup_oserror(err, stage="disposable test-copy removal")
+    assert "PermissionError" in text
+    assert "[Errno 13]" in text
+    assert r"C:\Users\secret" not in text
+    assert "working_copy" not in text
+
+
+def test_cleanup_timeout_force_removes_exact_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    working = tmp_path / "pytest-copy-to" / "working_copy"
+    working.mkdir(parents=True)
+    (working / "x.txt").write_text("x", encoding="utf-8")
+    removed: list[str | None] = []
+    seen_names: list[str] = []
+
+    def fake_run(cmd, **kwargs):  # noqa: ANN001
+        if isinstance(cmd, list) and cmd[:2] == ["docker", "run"]:
+            seen_names.append(cmd[cmd.index("--name") + 1])
+            raise subprocess.TimeoutExpired(cmd=cmd, timeout=kwargs.get("timeout", 60))
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("code_agent.runtime.docker_pytest.subprocess.run", fake_run)
+    monkeypatch.setattr(
+        "code_agent.runtime.docker_pytest._force_remove_container",
+        lambda name: removed.append(name),
+    )
+    with pytest.raises(RuntimeError, match="cleanup container timed out"):
+        _docker_wipe_as_uid_1000(working, image="code-agent-pytest:local")
+    assert len(seen_names) == 1
+    assert removed == [seen_names[0]]
+    assert seen_names[0].startswith("code-agent-cleanup-")
+
+
+def test_cleanup_timeout_error_has_no_host_mount_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    parent = tmp_path / "pytest-copy-to"
+    working = parent / "working_copy"
+    working.mkdir(parents=True)
+    (working / "x.txt").write_text("x", encoding="utf-8")
+
+    def fail_host_rmtree(target, *args, **kwargs):  # noqa: ANN001
+        raise PermissionError(13, "Permission denied")
+
+    def fake_run(cmd, **kwargs):  # noqa: ANN001
+        if isinstance(cmd, list) and cmd[:2] == ["docker", "run"]:
+            raise subprocess.TimeoutExpired(cmd=cmd, timeout=1)
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(
+        "code_agent.runtime.docker_pytest.shutil.rmtree", fail_host_rmtree
+    )
+    monkeypatch.setattr("code_agent.runtime.docker_pytest.subprocess.run", fake_run)
+    monkeypatch.setattr(
+        "code_agent.runtime.docker_pytest._force_remove_container", lambda _n: None
+    )
+    error = _remove_disposable_test_copy(parent, image="code-agent-pytest:local")
+    assert error is not None
+    assert "cleanup container timed out" in error
+    assert str(working.resolve()) not in error
+    assert working.resolve().as_posix() not in error
+    assert str(working.resolve()).replace("/", "\\") not in error
+    assert str(parent.resolve()) not in error
+    assert ":/cleanup" not in error
+    assert "PermissionError" in error or "cleanup container timed out" in error
+
+
+def test_cleanup_timeout_recorded_on_runner_without_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace = _workspace(tmp_path)
+    runner = DockerPytestRunner()
+    monkeypatch.setattr(runner, "preflight", lambda: (True, "ok"))
+    monkeypatch.setattr(runner, "_resolve_image", lambda: "code-agent-pytest:local")
+    monkeypatch.setattr(
+        "code_agent.runtime.docker_pytest._run_docker_cmd",
+        lambda cmd, timeout_seconds: ("passed stdout", "", 0),
+    )
+
+    def boom_remove(parent: Path, *, image: str) -> str:
+        # Simulate wipe timeout after host rmtree failed; return redacted text.
+        return _redact_disposable_paths(
+            f"cleanup container timed out after mounting {parent / 'working_copy'}",
+            parent=parent,
+        )
+
+    monkeypatch.setattr(
+        "code_agent.runtime.docker_pytest._remove_disposable_test_copy",
+        boom_remove,
+    )
+    log_path = tmp_path / "timeout-cleanup.log"
+    result = runner.run_pytest(workspace, log_path=log_path)
+    assert result.error_kind == "environment"
+    assert result.stdout == "passed stdout"
+    assert runner.last_cleanup_error is not None
+    assert "cleanup container timed out" in runner.last_cleanup_error
+    assert str(workspace.resolve()) not in (result.environment_error or "")
+    assert str(workspace.resolve()) not in result.stderr
+    assert runner.last_test_copy_parent is not None
+    assert str(runner.last_test_copy_parent.resolve()) not in (
+        result.environment_error or ""
+    )
+    assert str(runner.last_test_copy_parent.resolve()) not in result.stderr
+    log_text = log_path.read_text(encoding="utf-8")
+    assert str(runner.last_test_copy_parent.resolve()) not in log_text
+    assert "cleanup container timed out" in log_text
+    assert "container_name:" in log_text
+
+
+def test_successful_wipe_does_not_force_remove(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    working = tmp_path / "pytest-copy-ok" / "working_copy"
+    working.mkdir(parents=True)
+    removed: list[str | None] = []
+
+    def fake_run(cmd, **kwargs):  # noqa: ANN001
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr("code_agent.runtime.docker_pytest.subprocess.run", fake_run)
+    monkeypatch.setattr(
+        "code_agent.runtime.docker_pytest._force_remove_container",
+        lambda name: removed.append(name),
+    )
+    _docker_wipe_as_uid_1000(working, image="code-agent-pytest:local")
+    assert removed == []

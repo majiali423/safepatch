@@ -319,15 +319,55 @@ def _prepare_test_copy_for_container_uid(test_copy: Path) -> None:
 # Backward-compatible alias for older imports/tests.
 _make_test_copy_writable = _prepare_test_copy_for_container_uid
 
+_PLACEHOLDER_PARENT = "<disposable-test-copy>"
+_PLACEHOLDER_WORKING = "<disposable-working-copy>"
+
+
+def _path_string_variants(path: Path) -> list[str]:
+    """Absolute and slash-normalized spellings of ``path`` (longest first)."""
+    variants: set[str] = set()
+    try:
+        resolved = path.resolve()
+    except OSError:
+        resolved = path
+    for candidate in (path, resolved):
+        raw = str(candidate)
+        variants.add(raw)
+        variants.add(candidate.as_posix())
+        variants.add(raw.replace("/", "\\"))
+        variants.add(raw.replace("\\", "/"))
+        variants.add(candidate.as_posix().replace("/", "\\"))
+    return sorted((item for item in variants if item), key=len, reverse=True)
+
+
+def _redact_disposable_paths(text: str, *, parent: Path) -> str:
+    """Replace this run's disposable absolute paths with stable placeholders."""
+    working = parent / "working_copy"
+    out = text
+    for variant in _path_string_variants(working):
+        out = out.replace(variant, _PLACEHOLDER_WORKING)
+    for variant in _path_string_variants(parent):
+        out = out.replace(variant, _PLACEHOLDER_PARENT)
+    return out
+
+
+def _format_cleanup_oserror(exc: OSError, *, stage: str) -> str:
+    """Keep OSError type/errno without embedding absolute paths."""
+    errno_part = (
+        f" [Errno {exc.errno}]" if getattr(exc, "errno", None) is not None else ""
+    )
+    return f"{type(exc).__name__} during {stage}:{errno_part}"
+
 
 def _remove_disposable_test_copy(parent: Path, *, image: str) -> str | None:
-    """Remove one disposable parent directory. Return error text on failure.
+    """Remove one disposable parent directory. Return redacted error text on failure.
 
     Host ``rmtree`` first. If container UID 1000 created non-writable dirs
     (e.g. ``__pycache__``), fall back to a locked-down Docker wipe as UID 1000
     that mounts only ``parent / "working_copy"`` (never the private parent, the
     formal workspace, or the workspace parent). After wipe, the host removes the
     emptied working_copy, then the emptied parent, and confirms parent is gone.
+    Returned errors never include absolute host paths.
     """
     if not parent.exists():
         return None
@@ -346,7 +386,7 @@ def _remove_disposable_test_copy(parent: Path, *, image: str) -> str | None:
         if test_copy.exists():
             _docker_wipe_as_uid_1000(test_copy, image=image)
     except Exception as exc:  # noqa: BLE001
-        wipe_error = str(exc)
+        wipe_error = _redact_disposable_paths(str(exc), parent=parent)
 
     try:
         if test_copy.exists():
@@ -355,13 +395,15 @@ def _remove_disposable_test_copy(parent: Path, *, image: str) -> str | None:
             parent.rmdir()
     except OSError as exc:
         if parent.exists():
-            detail = f"{exc}"
+            detail = _format_cleanup_oserror(
+                exc, stage="disposable test-copy removal"
+            )
             if wipe_error:
                 detail = f"{detail}; docker wipe: {wipe_error}"
             return detail
 
     if parent.exists():
-        detail = f"path still exists after cleanup: {parent}"
+        detail = f"path still exists after cleanup: {_PLACEHOLDER_PARENT}"
         if wipe_error:
             detail = f"{detail}; docker wipe: {wipe_error}"
         return detail
@@ -374,6 +416,7 @@ def _docker_wipe_as_uid_1000(test_copy: Path, *, image: str) -> None:
         return
     name = f"code-agent-cleanup-{uuid.uuid4().hex}"
     host = str(test_copy.resolve())
+    parent = test_copy.parent
     cmd = [
         "docker",
         "run",
@@ -400,19 +443,24 @@ def _docker_wipe_as_uid_1000(test_copy: Path, *, image: str) -> None:
         "-c",
         _DOCKER_WIPE_PY,
     ]
-    proc = subprocess.run(
-        cmd,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-        timeout=60,
-        env=_sanitized_subprocess_env(),
-    )
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=60,
+            env=_sanitized_subprocess_env(),
+        )
+    except subprocess.TimeoutExpired:
+        _force_remove_container(name)
+        raise RuntimeError("cleanup container timed out") from None
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout or "docker wipe failed").strip()
-        raise RuntimeError(detail.splitlines()[0] if detail else "docker wipe failed")
+        first = detail.splitlines()[0] if detail else "docker wipe failed"
+        raise RuntimeError(_redact_disposable_paths(first, parent=parent))
 
 
 def _with_cleanup_failure(result: TestResult, cleanup_error: str) -> TestResult:
@@ -568,7 +616,9 @@ def _format_log(
             f"user: {config.user}",
         ]
     if test_copy_parent is not None:
-        parts.append(f"test_copy_parent: {test_copy_parent}")
+        # Persist only non-sensitive identity; never absolute host paths.
+        parts.append("test_copy_created: true")
+        parts.append(f"test_copy_id: {test_copy_parent.name}")
     if cleanup_error is not None:
         parts.append(f"cleanup_error: {cleanup_error}")
     parts += [
