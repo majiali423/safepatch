@@ -1,5 +1,10 @@
 # 第一版验收报告
 
+> **Historical snapshot (2026-07-27).** This document records an early acceptance
+> pass and must not be read as the current CI or Docker E2E status. For present-day
+> product behavior and verification commands, use the repository README,
+> `docs/NEXT_RELEASE_NOTES.md`, and GitHub Actions on `master`.
+
 日期：2026-07-27
 
 ## 0. 验证层次（务必区分）
@@ -141,7 +146,9 @@ CLI (cli.main)
 
 ### 1.6 尚未验证与已知限制
 
-- 真实 Docker Desktop E2E 未跑通
+以下条目描述 **2026-07-27 当时** 的限制，不是当前仓库状态：
+
+- 真实 Docker Desktop E2E 未跑通（**已过时**：`master` CI 现含 Docker E2E）
 - Windows 符号链接测试在无权限主机上会 skip
 - 第一版不装仓库依赖（镜像内仅 pytest）
 - 仅 UTF-8 `.py`；无 MCP / Issue / PR / 多 Agent
@@ -180,5 +187,8 @@ CLI (cli.main)
 ---
 
 ## 3. 真实 Docker 尚待本地执行的步骤
+
+> Historical note: this section reflected the 2026-07-27 workstation state.
+> Current verification uses CI Docker E2E and the README development commands.
 
 见本文件第 4 节与 README。在 Docker Desktop 启动前，**不得**声称 Docker E2E 通过。

@@ -6,7 +6,7 @@ when `b == 0`, but the tests require `ValueError`.
 
 ## Prerequisites
 
-- Python 3.11+
+- Python 3.10+ (matches `requires-python` in `pyproject.toml`)
 - Docker Desktop (or compatible daemon) running
 - Package installed editable: `pip install -e ".[dev]"`
 
