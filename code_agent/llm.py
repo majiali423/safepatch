@@ -6,7 +6,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import Any, Protocol
 
 from code_agent.state import TokenUsage
 from code_agent.tracing.recorder import _redact
@@ -74,15 +74,55 @@ FORMAT_RETRY_HINT = (
 class FormatErrorKind(str, Enum):
     JSON_DECODE_ERROR = "json_decode_error"
     INVALID_TOOL_SCHEMA = "invalid_tool_schema"
+    INVALID_TOOL_ARGUMENT_SCHEMA = "invalid_tool_argument_schema"
     INVALID_PROPOSAL_SCHEMA = "invalid_proposal_schema"
+
+
+@dataclass
+class ToolCall:
+    tool: str
+    args: dict[str, Any]
+
+    def __getitem__(self, key: str) -> Any:
+        if key == "tool":
+            return self.tool
+        if key == "args":
+            return self.args
+        raise KeyError(key)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        try:
+            return self[key]
+        except KeyError:
+            return default
 
 
 @dataclass
 class LLMResponse:
     raw_text: str
-    tool: str
-    args: dict[str, Any]
+    tool_call: ToolCall
     usage: TokenUsage | None = None
+
+    @property
+    def tool(self) -> str:
+        return self.tool_call.tool
+
+    @property
+    def args(self) -> dict[str, Any]:
+        return self.tool_call.args
+
+
+class ModelProvider(Protocol):
+    model: str
+    on_provider_invocation: Callable[[], None] | None
+
+    @property
+    def provider_name(self) -> str: ...
+
+    @property
+    def tool_calling_protocol(self) -> str: ...
+
+    def complete(self, messages: list[dict[str, str]]) -> LLMResponse: ...
 
 
 class LLMError(RuntimeError):
@@ -158,8 +198,7 @@ class LLMClient:
             raise
         return LLMResponse(
             raw_text=raw,
-            tool=parsed["tool"],
-            args=parsed.get("args", {}),
+            tool_call=parsed,
             usage=usage,
         )
 
@@ -299,7 +338,7 @@ def raw_preview(text: str, *, max_len: int = RAW_PREVIEW_MAX) -> str:
     return redacted[:max_len] + f"...[truncated,{len(redacted)} chars]"
 
 
-def parse_tool_call(text: str) -> dict[str, Any]:
+def parse_tool_call(text: str) -> ToolCall:
     cleaned = text.strip()
     if cleaned.startswith("```"):
         cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
@@ -359,4 +398,68 @@ def parse_tool_call(text: str) -> dict[str, Any]:
             error_kind=FormatErrorKind.INVALID_TOOL_SCHEMA,
             raw_text=text,
         )
-    return {"tool": tool, "args": args}
+    _validate_tool_arguments(tool, args, raw_text=text)
+    return ToolCall(tool=tool, args=args)
+
+
+def _validate_tool_arguments(tool: str, args: dict[str, Any], *, raw_text: str) -> None:
+    def fail(detail: str) -> None:
+        raise ModelOutputError(
+            detail,
+            error_kind=FormatErrorKind.INVALID_TOOL_ARGUMENT_SCHEMA,
+            raw_text=raw_text,
+        )
+
+    if tool in {"get_repo_map", "get_current_diff"}:
+        if args:
+            fail(f"{tool} does not accept arguments")
+        return
+    if tool == "list_tree":
+        if "path" in args and not isinstance(args["path"], str):
+            fail("list_tree.path must be a string")
+        return
+    if tool == "read_file":
+        if not isinstance(args.get("path"), str) or not args["path"]:
+            fail("read_file.path must be a non-empty string")
+        for field in ("start_line", "end_line"):
+            if field in args and args[field] is not None:
+                args[field] = _coerce_line_number(args[field], field=f"read_file.{field}", fail=fail)
+        start = args.get("start_line")
+        end = args.get("end_line")
+        if isinstance(start, int) and isinstance(end, int) and start > end:
+            fail("read_file.start_line must be <= end_line")
+        return
+    required_strings = {
+        "search_text": "query",
+        "search_symbol": "symbol",
+        "finish": "reason",
+    }
+    if tool in required_strings:
+        field = required_strings[tool]
+        if not isinstance(args.get(field), str) or not args[field]:
+            fail(f"{tool}.{field} must be a non-empty string")
+        return
+    if tool == "request_evidence":
+        for field in ("start_line", "end_line"):
+            if field in args and args[field] is not None:
+                args[field] = _coerce_line_number(
+                    args[field], field=f"request_evidence.{field}", fail=fail
+                )
+        return
+    # Proposal validation has a separate, more specific error class.
+    if tool in {"propose_patch", "propose_edit"}:
+        return
+
+
+def _coerce_line_number(value: Any, *, field: str, fail: Callable[[str], None]) -> int:
+    """Normalize legacy pure-decimal line strings; reject bool/float/negatives."""
+    if isinstance(value, bool):
+        fail(f"{field} must be an integer")
+    if isinstance(value, int):
+        if value < 0:
+            fail(f"{field} must be a non-negative integer")
+        return value
+    if isinstance(value, str) and re.fullmatch(r"[0-9]+", value):
+        return int(value)
+    fail(f"{field} must be an integer")
+    raise AssertionError("unreachable")

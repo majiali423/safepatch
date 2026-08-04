@@ -95,6 +95,23 @@ class _BaselineFailRunner:
         return result
 
 
+class _AlwaysPassRunner:
+    def preflight(self):
+        return True, "ok"
+
+    def run_pytest(self, workspace_root, *, log_path=None):
+        result = TestResult(
+            exit_code=0,
+            stdout="passed",
+            stderr="",
+            duration_sec=0.01,
+        )
+        if log_path:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_path.write_text(result.stdout, encoding="utf-8")
+        return result
+
+
 def _patch_cli(monkeypatch, *, script, runner_factory=None):
     from code_agent import cli as cli_mod
 
@@ -238,3 +255,31 @@ def test_cli_exit_code_5_model_output_invalid_no_regression(tmp_path: Path, monk
     out = buf.getvalue()
     assert "model_output_invalid" in out
     assert "MODEL_OUTPUT_INVALID" in out
+
+
+def test_cli_exit_code_9_for_green_baseline_without_oracle(tmp_path: Path, monkeypatch):
+    repo = _mini_repo(tmp_path)
+    session_base = tmp_path / "sess"
+    cli_mod, buf = _patch_cli(
+        monkeypatch,
+        script=[_good_patch()],
+        runner_factory=lambda: _AlwaysPassRunner(),
+    )
+    code = cli_mod.main(
+        [
+            str(repo),
+            "feature request",
+            "--yes",
+            "--session-base",
+            str(session_base),
+        ]
+    )
+    assert code == 9
+    summary, _ = _find_summary(session_base)
+    assert summary["status"] == "TESTS_PASSED_UNVERIFIED"
+    assert summary["final_tests_passed"] is True
+    assert summary["request_verified"] is False
+    assert summary["verification_basis"] == "green_baseline_no_independent_oracle"
+    out = buf.getvalue()
+    assert "Auto-approving" in out
+    assert "not independently verified" in out

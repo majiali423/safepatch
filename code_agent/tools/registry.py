@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any, Callable
 
@@ -16,11 +17,18 @@ from code_agent.tools.search_symbol import search_symbol
 from code_agent.tools.search_text import search_text
 
 
+class ToolErrorKind(str, Enum):
+    UNKNOWN_OR_FORBIDDEN = "unknown_or_forbidden_tool"
+    EXECUTION_ERROR = "tool_execution_error"
+
+
 class ToolError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, error_kind: ToolErrorKind) -> None:
+        super().__init__(message)
+        self.error_kind = error_kind
 
 
-class ReadBudgetExceeded(ToolError):
+class ReadBudgetExceeded(RuntimeError):
     """The model requested a general read after its read budget reached zero."""
 
 
@@ -151,7 +159,7 @@ def execute_tool(
             detail = str(exc)
             if name in READ_TOOLS:
                 detail = f"{detail}\n\n{_budget_feedback(session)}"
-            raise ToolError(detail) from exc
+            raise ToolError(detail, error_kind=ToolErrorKind.EXECUTION_ERROR) from exc
 
     if name in {"propose_patch", "propose_edit"}:
         # Controller handles validation; return marker payload.
@@ -161,4 +169,7 @@ def execute_tool(
         reason = str(arguments.get("reason", "finished"))
         return f"__FINISH__:{reason}", True
 
-    raise ToolError(f"Unknown or forbidden tool: {name}")
+    raise ToolError(
+        f"Unknown or forbidden tool: {name}",
+        error_kind=ToolErrorKind.UNKNOWN_OR_FORBIDDEN,
+    )

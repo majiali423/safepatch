@@ -32,10 +32,26 @@ PILOT_TASKS = {
     "bench12_slug_overfit",
 }
 
+
+def report_path(value: object) -> str:
+    """Render local artifact paths relative to the repository in public reports."""
+    if not value:
+        return "—"
+    try:
+        return Path(str(value)).resolve().relative_to(ROOT.resolve()).as_posix()
+    except ValueError:
+        return "<EXTERNAL_PATH>"
+
 sys.path.insert(0, str(ROOT))
 from code_agent.envfile import load_dotenv  # noqa: E402
 
 load_dotenv(ROOT / ".env")
+
+from metrics_lib import (  # noqa: E402
+    artifact_is_consistent,
+    build_run_metrics,
+    resolve_eval_status,
+)
 
 from code_agent.eval.hidden import (  # noqa: E402
     discover_hidden_dir,
@@ -44,12 +60,6 @@ from code_agent.eval.hidden import (  # noqa: E402
 )
 from code_agent.llm import SYSTEM_PROMPT  # noqa: E402
 from code_agent.runtime.docker_pytest import DockerPytestRunner  # noqa: E402
-
-from metrics_lib import (  # noqa: E402
-    artifact_is_consistent,
-    build_run_metrics,
-    resolve_eval_status,
-)
 
 
 def _utc_now() -> str:
@@ -658,8 +668,8 @@ def write_full12_report(*, freeze: dict, first: list[dict], all_runs: list[dict]
                 dur=f"{float(r.get('duration_sec') or 0):.1f}",
                 sr=r.get("stop_reason"),
                 rr=r.get("rerun_reason") or "—",
-                sp=r.get("session_path"),
-                rp=r.get("result_path"),
+                sp=report_path(r.get("session_path")),
+                rp=report_path(r.get("result_path")),
             )
         )
     lines.append("")

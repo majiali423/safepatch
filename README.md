@@ -61,10 +61,12 @@ The product path is intentionally narrow:
 - one local Python + pytest repository at a time
 - no shell, browser, or network tools for the model
 - policy validation and exact patch preflight before approval
-- Docker pytest as the sole correctness oracle for repair attempts
+- Docker pytest as the regression runner for repair attempts; a green baseline
+  alone is not an independent request oracle
 - product session status separated from hidden-test evaluation status
 
-Current product tag: **v0.3.1** (exact patch preflight / patch regeneration; apply-failure classification).
+Current product tag: **v0.3.1**. The reliability changes described below are
+unreleased working-tree improvements, not a published release.
 
 ## Motivation
 
@@ -164,8 +166,16 @@ Design notes: [Patch Applicability](docs/V0.3_PATCH_APPLICABILITY.md) and
 
 ## Security Boundaries
 
-- Model tools cannot request shell, Docker, or network access
-- Pytest runs with `--network none`, non-root UID, resource caps, and `--rm`
+- Model tools cannot request shell, Docker, direct file writes, browser, or network access
+- Docker pytest cannot use the network and runs against a disposable writable test
+  copy with `--network none`, capability drop, no-new-privileges, a read-only
+  container root, non-root UID, resource caps, and `--rm`. This is
+  defense-in-depth isolation, not a claim of a complete security sandbox.
+- The configured LLM provider API does require host network access. Repository maps,
+  selected source snippets, tracebacks, and proposed diffs may be sent to that
+  provider. A local OpenAI-compatible endpoint can reduce code disclosure.
+- "Local repository" describes where the repository starts; it does not mean all
+  inference is offline.
 - Host API keys are not passed into the container
 - Trace recording redacts secret-like strings
 - Source tree remains untouched; only `working_copy` is patched
@@ -299,6 +309,7 @@ Exit codes (selected):
 | 6 | `PATCH_NOT_APPLICABLE` |
 | 7 | `PATCH_BASE_CHANGED` |
 | 8 | `READ_BUDGET_EXHAUSTED` |
+| 9 | `TESTS_PASSED_UNVERIFIED` (tests green, request lacks an independent oracle) |
 
 More detail: [Demo](docs/DEMO.md).
 
@@ -383,12 +394,15 @@ Out of scope (v0.3):
 
 - Benchmark coverage is a fixed micro-suite; scores are not proof of
   production readiness on arbitrary repositories
+- The historical Full12 x3 result used one model on self-authored fixed micro-tasks;
+  the frozen manifest detects task, hidden-test, prompt, and runner drift. It is not
+  production proof and is not rewritten when current product semantics change.
 - Model sampling varies; regeneration paths may or may not appear in a
   given live run
 - Symlink edge-case tests may be skipped on hosts that cannot create
   symlinks
-- Package metadata version in `pyproject.toml` may lag the git tag; treat
-  git tags as the release source of truth for v0.3 documentation
+- The real-bug benchmark remains a seven-task small sample and should not be
+  interpreted as a universal model leaderboard
 
 ## Repository Structure
 
@@ -416,6 +430,7 @@ tests/                      Unit / integration / Docker E2E tests
 | [Preflight Controlled Comparison](examples/real_bug_benchmark/PREFLIGHT_CONTROLLED_COMPARISON_REPORT.md) | Honest interpretation of the frozen 28-run on/off experiment |
 | [Failure Case Study](docs/FAILURE_CASE_STUDY.md) | Why two public-test passes failed hidden semantics |
 | [Walkthrough](docs/WALKTHROUGH.md) | Conceptual end-to-end explanation |
+| [Next Release Notes](docs/NEXT_RELEASE_NOTES.md) | Unreleased reliability work; no version commitment |
 | [v0.2 Release Notes](docs/V0.2_RELEASE_NOTES.md) | Prior release notes |
 | [Acceptance Report](docs/ACCEPTANCE_REPORT.md) | Verification layers (historical) |
 
@@ -423,18 +438,23 @@ tests/                      Unit / integration / Docker E2E tests
 
 ```bash
 pip install -e ".[dev]"
-pytest
+python -m pytest
 ```
+
+Current acceptance snapshot (2026-08-01): 191 tests collected; 190 passed and
+1 host-specific test skipped, with all 7 Docker E2E tests executed. P0 coverage includes fail-closed approval,
+exact declared/actual file-set matching, green-baseline verification semantics,
+and disposable Docker test-copy isolation.
 
 Docker-dependent negative E2E:
 
 ```bash
-pytest -m docker_e2e
+python -m pytest -m docker_e2e
 ```
 
 Do not commit `.env`, session directories, or `examples/llm_benchmark/results/`.
 
 ## License
 
-No SPDX license file has been published in this repository yet. Treat the
-code as source-available until a license is added.
+The repository owner has not selected or published an open-source license.
+Until that decision is made, do not assume permission beyond applicable law.

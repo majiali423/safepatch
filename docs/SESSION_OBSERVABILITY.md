@@ -1,6 +1,6 @@
 # Session Observability
 
-Product tag: **v0.3.1**. SafePatch writes a machine-readable
+Status: **Unreleased reliability design; current product tag v0.3.1**. SafePatch writes a machine-readable
 `observability` object into each session `summary.json`. Counters are
 updated at the event site (model call, tool dispatch, pytest start) — not
 by parsing `trace.jsonl` after the fact.
