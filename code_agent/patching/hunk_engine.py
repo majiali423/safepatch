@@ -26,6 +26,8 @@ class HunkMatchError(Exception):
         line_no: int | None,
         first_unmatched_context: str,
         detail: str,
+        actual_context: str = "",
+        candidate_lines: list[int] | None = None,
     ) -> None:
         super().__init__(detail)
         self.error_kind = error_kind
@@ -33,6 +35,8 @@ class HunkMatchError(Exception):
         self.hunk_index = hunk_index
         self.line_no = line_no
         self.first_unmatched_context = first_unmatched_context
+        self.actual_context = actual_context
+        self.candidate_lines = list(candidate_lines or [])
         self.detail = detail
 
     def __str__(self) -> str:
@@ -145,8 +149,59 @@ def parse_hunks(body: str) -> list[dict[str, Any]]:
     return hunks
 
 
-def apply_hunks_to_text(original: str, body: str, file_path: str) -> str:
-    """Apply hunks to in-memory text with exact context matching (no fuzzy)."""
+def _bare_lines(lines: list[str]) -> list[str]:
+    return [line.rstrip("\n\r") for line in lines]
+
+
+def _hunk_old_lines(hunk: dict[str, Any]) -> list[str]:
+    return [content.rstrip("\n\r") for tag, content in hunk["lines"] if tag != "+"]
+
+
+def _exact_block_matches(source: list[str], start: int, expected: list[str]) -> bool:
+    if start < 0 or start + len(expected) > len(source):
+        return False
+    return _bare_lines(source[start : start + len(expected)]) == expected
+
+
+def _exact_block_candidates(source: list[str], expected: list[str]) -> list[int]:
+    if not expected:
+        return []
+    last_start = len(source) - len(expected)
+    return [
+        start
+        for start in range(last_start + 1)
+        if _exact_block_matches(source, start, expected)
+    ]
+
+
+def _first_hunk_mismatch(
+    source: list[str], hunk: dict[str, Any], requested_start: int
+) -> tuple[str, int, str, str]:
+    source_index = max(requested_start, 0)
+    for tag, content in hunk["lines"]:
+        if tag == "+":
+            continue
+        expected = content.rstrip("\n\r")
+        actual = (
+            source[source_index].rstrip("\n\r")
+            if 0 <= source_index < len(source)
+            else "<EOF>"
+        )
+        if actual != expected:
+            kind = "deletion_mismatch" if tag == "-" else "context_mismatch"
+            return kind, source_index + 1, expected, actual
+        source_index += 1
+    return "context_mismatch", requested_start + 1, "", ""
+
+
+def apply_hunks_to_text(
+    original: str,
+    body: str,
+    file_path: str,
+    *,
+    relocations: list[dict[str, int]] | None = None,
+) -> str:
+    """Apply hunks with exact matching and safe unique-block relocation."""
 
     def split_keep(text: str) -> list[str]:
         if text == "":
@@ -169,7 +224,49 @@ def apply_hunks_to_text(original: str, body: str, file_path: str) -> str:
         )
 
     for hunk_index, hunk in enumerate(hunks):
-        old_start = hunk["old_start"] - 1  # 0-based
+        requested_start = hunk["old_start"] - 1  # 0-based
+        expected_old = _hunk_old_lines(hunk)
+        old_start = requested_start
+
+        if expected_old and not _exact_block_matches(source, requested_start, expected_old):
+            candidates = _exact_block_candidates(source, expected_old)
+            usable = [candidate for candidate in candidates if candidate >= src_index]
+            if len(candidates) == 1 and len(usable) == 1:
+                old_start = usable[0]
+                if relocations is not None:
+                    relocations.append(
+                        {
+                            "hunk_index": hunk_index,
+                            "requested_line": requested_start + 1,
+                            "applied_line": old_start + 1,
+                        }
+                    )
+            else:
+                kind, line_no, expected, actual = _first_hunk_mismatch(
+                    source, hunk, requested_start
+                )
+                if len(candidates) > 1:
+                    kind = "ambiguous_context"
+                    detail = (
+                        f"Exact hunk context for {file_path} appears at multiple lines: "
+                        f"{', '.join(str(line + 1) for line in candidates)}"
+                    )
+                else:
+                    detail = (
+                        f"{kind.replace('_', ' ').title()} in {file_path} at line "
+                        f"{line_no}: expected {expected!r}, got {actual!r}"
+                    )
+                raise HunkMatchError(
+                    error_kind=kind,
+                    target_file=file_path,
+                    hunk_index=hunk_index,
+                    line_no=line_no,
+                    first_unmatched_context=expected,
+                    actual_context=actual,
+                    candidate_lines=[line + 1 for line in candidates],
+                    detail=detail,
+                )
+
         if old_start < src_index:
             raise HunkMatchError(
                 error_kind="overlapping_hunk",
@@ -193,6 +290,7 @@ def apply_hunks_to_text(original: str, body: str, file_path: str) -> str:
                         line_no=src_index + 1,
                         first_unmatched_context=content,
                         detail=f"Context mismatch EOF in {file_path}",
+                        actual_context="<EOF>",
                     )
                 current = source[src_index].rstrip("\n\r")
                 expected = content.rstrip("\n\r")
@@ -203,6 +301,7 @@ def apply_hunks_to_text(original: str, body: str, file_path: str) -> str:
                         hunk_index=hunk_index,
                         line_no=src_index + 1,
                         first_unmatched_context=content,
+                        actual_context=current,
                         detail=(
                             f"Context mismatch in {file_path} at line {src_index + 1}: "
                             f"expected {content!r}, got {current!r}"
@@ -219,6 +318,7 @@ def apply_hunks_to_text(original: str, body: str, file_path: str) -> str:
                         line_no=src_index + 1,
                         first_unmatched_context=content,
                         detail=f"Deletion mismatch EOF in {file_path}",
+                        actual_context="<EOF>",
                     )
                 current = source[src_index].rstrip("\n\r")
                 expected = content.rstrip("\n\r")
@@ -229,6 +329,7 @@ def apply_hunks_to_text(original: str, body: str, file_path: str) -> str:
                         hunk_index=hunk_index,
                         line_no=src_index + 1,
                         first_unmatched_context=content,
+                        actual_context=current,
                         detail=(
                             f"Deletion mismatch in {file_path} at line {src_index + 1}"
                         ),

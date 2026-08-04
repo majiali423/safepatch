@@ -1,0 +1,20 @@
+diff --git a/tests/test_logging.py b/tests/test_logging.py
+index 3af3f122..7f45f77a 100644
+--- a/tests/test_logging.py
++++ b/tests/test_logging.py
+@@ -102,3 +102,15 @@ def test_log_connection_lost(app, debug, monkeypatch):
+         assert 'Connection lost before response written @' in log
+     else:
+         assert 'Connection lost before response written @' not in log
++
++
++def test_logging_modified_root_logger_config():
++    reset_logging()
++
++    modified_config = LOGGING_CONFIG_DEFAULTS
++    modified_config['loggers']['sanic.root']['level'] = 'DEBUG'
++
++    app = Sanic("test_logging", log_config=modified_config)
++
++    assert logging.getLogger('sanic.root').getEffectiveLevel() == logging.DEBUG
++

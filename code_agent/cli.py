@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
 from rich.console import Console
@@ -121,8 +120,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.yes:
             console.print(
                 f"[yellow]Auto-approving patch attempt {attempt}[/yellow] "
-                f"patch_hash={binding.patch_hash[:12]}… "
-                f"wt_hash={binding.working_tree_hash[:12]}…"
+                f"patch_hash={binding.patch_hash[:12]}... "
+                f"wt_hash={binding.working_tree_hash[:12]}..."
             )
             return True
         return _prompt_approval(binding, attempt)
@@ -168,6 +167,8 @@ def main(argv: list[str] | None = None) -> int:
         return 6
     if session.status.value == "PATCH_BASE_CHANGED":
         return 7
+    if session.status.value == "READ_BUDGET_EXHAUSTED":
+        return 8
     return 1
 
 

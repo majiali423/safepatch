@@ -1,0 +1,23 @@
+--- a/tqdm/_tqdm.py
++++ b/tqdm/_tqdm.py
+@@ -953,6 +953,20 @@
+              else len(self.iterable) if hasattr(self.iterable, "__len__")
+              else getattr(self, "total", None))
+ 
++    def __bool__(self):
++        if self.iterable is not None:
++            if hasattr(self.iterable, "__len__"):
++                return len(self.iterable) > 0
++            # unsized iterable (e.g. generator): assume non-empty
++            return True
++        if self.total is not None:
++            return self.total > 0
++        # both iterable and total are None
++        raise TypeError("bool is undefined when neither iterable nor total is set")
++
++    def __nonzero__(self):
++        return self.__bool__()
++
+     def __enter__(self):
+         return self
+ 

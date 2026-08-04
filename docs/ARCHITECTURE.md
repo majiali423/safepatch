@@ -74,6 +74,10 @@ flowchart LR
 | `patch_regeneration_retries` | Legal proposal that fails exact preflight |
 | `repair_attempts` (`attempts_used`) | Successful apply followed by pytest |
 
+Per-session machine-readable totals (model calls, tools, pytest runs,
+tokens, monotonic duration) live under `summary.json` → `observability`.
+See [Session Observability](SESSION_OBSERVABILITY.md).
+
 ## Selected terminal statuses
 
 | Status | When |
@@ -84,6 +88,7 @@ flowchart LR
 | `PATCH_BASE_CHANGED` | Working tree hash changed after approval |
 | `REJECTED` | Human rejected an applicable proposal |
 | `MODEL_OUTPUT_INVALID` | Format retries exhausted |
+| `READ_BUDGET_EXHAUSTED` | Synthesis ended through repeated no-progress actions, evidence hard violation, or the synthesis step limit |
 | `TEST_ENVIRONMENT_ERROR` / `TEST_TIMEOUT` | Docker / pytest infrastructure failure |
 
 Product `SessionStatus` is distinct from evaluator `EvalStatus` used for

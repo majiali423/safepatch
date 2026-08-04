@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "id": "tornado-10",
+  "repository": "https://github.com/tornadoweb/tornado",
+  "buggy_commit": "ecd8968c5135b810cd607b5902dda2cd32122b39",
+  "fixed_commit": "5931d913b4ea250891a0b582f1f8b2901b868c79",
+  "task_python": "3.7.17",
+  "prompt": "A WebSocket handler should be able to call render_string from on_message after the HTTP upgrade has finished. Preserve normal RequestHandler cycle cleanup without clearing WebSocket handler state before the connection actually closes.",
+  "public_test_patch": "public_test.patch",
+  "hidden_test_patch": "hidden_test.patch",
+  "hidden_test_command": [
+    "python",
+    "-m",
+    "pytest",
+    "safepatch_hidden/test_hidden_regression.py::HiddenWebSocketLifecycleTest::test_render_state_lives_until_close_then_releases",
+    "-q",
+    "-s",
+    "--disable-warnings"
+  ],
+  "test_command": [
+    "python",
+    "-m",
+    "unittest",
+    "-q",
+    "tornado.test.websocket_test.WebSocketTest.test_render_message"
+  ],
+  "failure_signature": "render_string"
+}

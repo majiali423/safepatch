@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -207,6 +208,14 @@ def validate_proposal(
     for f in proposal.affected_files:
         if f not in touched:
             errors.append(f"affected_files entry not in diff: {f}")
+
+    touched_set = set(touched)
+    for path, revision in proposal.base_revisions.items():
+        normalized = path.replace("\\", "/").removeprefix("./")
+        if normalized not in touched_set:
+            errors.append(f"base_revisions entry not in diff: {path}")
+        if re.fullmatch(r"sha256:[0-9a-f]{64}", revision) is None:
+            errors.append(f"Invalid file revision for {path}")
 
     integrity = check_test_integrity(
         workspace_root=workspace_root,

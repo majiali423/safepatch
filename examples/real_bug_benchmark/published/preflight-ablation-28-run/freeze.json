@@ -1,0 +1,213 @@
+{
+  "schema_version": 1,
+  "started_at": "2026-07-30T14:31:13.850203+00:00",
+  "experiment": "deepseek_v4_flash_preflight_ablation_28run_20260730",
+  "task_ids": [
+    "pysnooper-3",
+    "tornado-11",
+    "tqdm-3",
+    "sanic-5",
+    "thefuck-19",
+    "tornado-10",
+    "thefuck-16"
+  ],
+  "model": "deepseek-v4-flash",
+  "base_host": "api.deepseek.com",
+  "temperature": 0.1,
+  "system_prompt_sha256": "43d9e2fd253bbdfc0f7fb49076c18f8523426a7aef405dcc221d107d3c93ff69",
+  "product_files_sha256": "1ffb6e8056e7ba0e274af43c06eb54ea0df16bd26bc24fcaaeb11f2ecb8c9b47",
+  "task_assets_sha256": "5d590478d93b9506f748376c996a0693ecfe4e3ce42fecb00a0878ddce5c3b42",
+  "pricing": {
+    "effective_date": "2026-07-28",
+    "model": "deepseek-v4-flash",
+    "source": "https://api-docs.deepseek.com/quick_start/pricing/",
+    "input_cache_hit_usd_per_million": 0.0028,
+    "input_cache_miss_usd_per_million": 0.14,
+    "output_usd_per_million": 0.28
+  },
+  "reference_fix_visible_to_agent": false,
+  "hidden_tests_visible_to_agent": false,
+  "git_commit": "b455df2fd679f0c4a1e4ffe4894101a70ab3eb0f",
+  "comparison": "preflight_enabled_vs_disabled",
+  "runs_per_task_per_condition": 2,
+  "schedule": [
+    {
+      "slot": 1,
+      "task_id": "pysnooper-3",
+      "repeat": 1,
+      "preflight_enabled": true
+    },
+    {
+      "slot": 2,
+      "task_id": "pysnooper-3",
+      "repeat": 1,
+      "preflight_enabled": false
+    },
+    {
+      "slot": 3,
+      "task_id": "tornado-11",
+      "repeat": 1,
+      "preflight_enabled": false
+    },
+    {
+      "slot": 4,
+      "task_id": "tornado-11",
+      "repeat": 1,
+      "preflight_enabled": true
+    },
+    {
+      "slot": 5,
+      "task_id": "tqdm-3",
+      "repeat": 1,
+      "preflight_enabled": true
+    },
+    {
+      "slot": 6,
+      "task_id": "tqdm-3",
+      "repeat": 1,
+      "preflight_enabled": false
+    },
+    {
+      "slot": 7,
+      "task_id": "sanic-5",
+      "repeat": 1,
+      "preflight_enabled": false
+    },
+    {
+      "slot": 8,
+      "task_id": "sanic-5",
+      "repeat": 1,
+      "preflight_enabled": true
+    },
+    {
+      "slot": 9,
+      "task_id": "thefuck-19",
+      "repeat": 1,
+      "preflight_enabled": true
+    },
+    {
+      "slot": 10,
+      "task_id": "thefuck-19",
+      "repeat": 1,
+      "preflight_enabled": false
+    },
+    {
+      "slot": 11,
+      "task_id": "tornado-10",
+      "repeat": 1,
+      "preflight_enabled": false
+    },
+    {
+      "slot": 12,
+      "task_id": "tornado-10",
+      "repeat": 1,
+      "preflight_enabled": true
+    },
+    {
+      "slot": 13,
+      "task_id": "thefuck-16",
+      "repeat": 1,
+      "preflight_enabled": true
+    },
+    {
+      "slot": 14,
+      "task_id": "thefuck-16",
+      "repeat": 1,
+      "preflight_enabled": false
+    },
+    {
+      "slot": 15,
+      "task_id": "pysnooper-3",
+      "repeat": 2,
+      "preflight_enabled": false
+    },
+    {
+      "slot": 16,
+      "task_id": "pysnooper-3",
+      "repeat": 2,
+      "preflight_enabled": true
+    },
+    {
+      "slot": 17,
+      "task_id": "tornado-11",
+      "repeat": 2,
+      "preflight_enabled": true
+    },
+    {
+      "slot": 18,
+      "task_id": "tornado-11",
+      "repeat": 2,
+      "preflight_enabled": false
+    },
+    {
+      "slot": 19,
+      "task_id": "tqdm-3",
+      "repeat": 2,
+      "preflight_enabled": false
+    },
+    {
+      "slot": 20,
+      "task_id": "tqdm-3",
+      "repeat": 2,
+      "preflight_enabled": true
+    },
+    {
+      "slot": 21,
+      "task_id": "sanic-5",
+      "repeat": 2,
+      "preflight_enabled": true
+    },
+    {
+      "slot": 22,
+      "task_id": "sanic-5",
+      "repeat": 2,
+      "preflight_enabled": false
+    },
+    {
+      "slot": 23,
+      "task_id": "thefuck-19",
+      "repeat": 2,
+      "preflight_enabled": false
+    },
+    {
+      "slot": 24,
+      "task_id": "thefuck-19",
+      "repeat": 2,
+      "preflight_enabled": true
+    },
+    {
+      "slot": 25,
+      "task_id": "tornado-10",
+      "repeat": 2,
+      "preflight_enabled": true
+    },
+    {
+      "slot": 26,
+      "task_id": "tornado-10",
+      "repeat": 2,
+      "preflight_enabled": false
+    },
+    {
+      "slot": 27,
+      "task_id": "thefuck-16",
+      "repeat": 2,
+      "preflight_enabled": false
+    },
+    {
+      "slot": 28,
+      "task_id": "thefuck-16",
+      "repeat": 2,
+      "preflight_enabled": true
+    }
+  ],
+  "schedule_sha256": "69c1cb4d76b5101b3b4954e93155cb2dd32ac28e148a88e43aede4c395412e4a",
+  "limits": {
+    "max_active_minutes": 60.0,
+    "max_estimated_cost_usd": 0.25,
+    "enforcement": "checked before and after every completed slot"
+  },
+  "rerun_policy": {
+    "model_or_semantic_failures": "counted; never rerun",
+    "environment_or_api_failures": "retained; resume same slot only"
+  }
+}

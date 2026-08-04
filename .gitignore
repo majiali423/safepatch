@@ -17,6 +17,8 @@ venv/
 examples/eval_tasks/results/
 examples/eval_tasks/**/latest/
 examples/llm_benchmark/results/
+examples/real_bug_benchmark/results/
+/.codex-*/
 
 # Local scratch / personal notes (never commit)
 **/NOTES.private.md
@@ -24,6 +26,8 @@ examples/llm_benchmark/results/
 
 # Caches
 .pytest_cache/
+.coverage
+htmlcov/
 .mypy_cache/
 .ruff_cache/
 **/__pycache__/

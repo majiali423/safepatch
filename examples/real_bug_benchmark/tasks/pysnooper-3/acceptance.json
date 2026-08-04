@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "task_id": "pysnooper-3",
+  "accepted": true,
+  "verified_at": "2026-07-28T09:53:51.3359992Z",
+  "repository": {
+    "url": "https://github.com/cool-RR/PySnooper",
+    "buggy_commit": "6e3d797be3fa0a746fb5b1b7c7fea78eb926c208",
+    "fixed_commit": "15555ed760000b049aff8fecc79d29339c1224c3",
+    "files": 17,
+    "bytes": 27524
+  },
+  "image": {
+    "tag": "safepatch-bench-pysnooper:local",
+    "digest": "sha256:fefefea0c36bc13bd1a82aa5dd168c01a26b444937ddda1b40e609fb7c12fc34",
+    "base_digest": "sha256:1d52838af602b4b5a831beb13a0e4d073280665ea7be7f69ce2382f29c5a613f"
+  },
+  "sandbox": {
+    "network": "none",
+    "cpus": 1,
+    "memory_mib": 512,
+    "pids_limit": 128,
+    "container_user": "agent"
+  },
+  "buggy_result": {
+    "exit_code": 1,
+    "outcome": "expected_failure",
+    "signature": "NameError: name 'output_path' is not defined"
+  },
+  "fixed_result": {
+    "exit_code": 0,
+    "outcome": "passed",
+    "tests_passed": 1
+  },
+  "hidden_result": {
+    "buggy_exit_code": 1,
+    "fixed_exit_code": 0,
+    "outcome": "expected_failure_then_pass"
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "task_id": "tornado-10",
+  "accepted": true,
+  "verified_at": "2026-07-29T16:23:22.2112827Z",
+  "repository": {
+    "url": "https://github.com/tornadoweb/tornado",
+    "buggy_commit": "ecd8968c5135b810cd607b5902dda2cd32122b39",
+    "fixed_commit": "5931d913b4ea250891a0b582f1f8b2901b868c79",
+    "files": 308,
+    "bytes": 1995774
+  },
+  "image": {
+    "tag": "safepatch-bench-tornado-10:local",
+    "digest": "sha256:f26ba66b8d13210191167abf59652c1025a1068529a091be2416aad52cf665f3",
+    "base_digest": "sha256:b53f496ca43e5af6994f8e316cf03af31050bf7944e0e4a308ad86c001cf028b"
+  },
+  "sandbox": {
+    "network": "none",
+    "cpus": 1,
+    "memory_mib": 512,
+    "pids_limit": 128,
+    "container_user": "agent"
+  },
+  "buggy_result": {
+    "exit_code": 1,
+    "outcome": "expected_failure",
+    "signature": "AssertionError: None != '<b>hello</b>'",
+    "tests_failed": 1
+  },
+  "fixed_result": {
+    "exit_code": 0,
+    "outcome": "passed",
+    "tests_passed": 1
+  },
+  "hidden_result": {
+    "buggy_exit_code": 1,
+    "fixed_exit_code": 0,
+    "outcome": "expected_failure_then_pass"
+  }
+}

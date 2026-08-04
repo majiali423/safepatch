@@ -5,9 +5,13 @@ from pathlib import Path
 from typing import Any, Callable
 
 from code_agent.repository.git_diff import current_diff_from_snapshot
-from code_agent.state import TaskSession
+from code_agent.state import AnalysisPhase, TaskSession
 from code_agent.tools.list_tree import list_tree
 from code_agent.tools.read_file import read_file
+from code_agent.tools.request_evidence import (
+    normalized_path,
+    record_successful_read_range,
+)
 from code_agent.tools.search_symbol import search_symbol
 from code_agent.tools.search_text import search_text
 
@@ -16,7 +20,47 @@ class ToolError(RuntimeError):
     pass
 
 
+class ReadBudgetExceeded(ToolError):
+    """The model requested a general read after its read budget reached zero."""
+
+
+READ_BUDGET_WARNING_THRESHOLD = 3
+
+
 READ_TOOLS = {"list_tree", "read_file", "search_text", "search_symbol", "get_repo_map"}
+
+
+def _budget_feedback(session: TaskSession) -> str:
+    remaining = max(
+        session.max_read_actions - session.exploration_read_actions_used,
+        0,
+    )
+    lines = [
+        (
+            "READ_BUDGET: "
+            f"used={session.exploration_read_actions_used}/"
+            f"{session.max_read_actions}, remaining={remaining}"
+        )
+    ]
+    if remaining == 0:
+        lines.extend(
+            [
+                "ANALYSIS_PHASE: SYNTHESIZE. Free exploration is complete.",
+                "Choose one next action:",
+                "1. Submit propose_edit using content and revisions already returned.",
+                "2. Submit propose_patch using context already returned.",
+                "3. Submit request_evidence for one explicit missing code range.",
+                "4. Call finish and explain why no safe patch can be proposed.",
+                "Do not call general read/search/tree/map tools in SYNTHESIZE.",
+                "A read explicitly required by PATCH_PREFLIGHT_FAILED remains allowed.",
+            ]
+        )
+    elif remaining <= READ_BUDGET_WARNING_THRESHOLD:
+        lines.append(
+            "READ_BUDGET_WARNING: Exploration is nearly complete. Use remaining reads "
+            "for essential context and prepare to synthesize a proposal or finish."
+        )
+    return "\n".join(lines)
 
 
 @dataclass
@@ -32,7 +76,9 @@ class ToolRegistry:
             "search_symbol",
             "get_repo_map",
             "get_current_diff",
+            "request_evidence",
             "propose_patch",
+            "propose_edit",
             "finish",
         ]
 
@@ -52,10 +98,26 @@ def execute_tool(
     root = session.workspace_root
 
     if name in READ_TOOLS:
-        if session.read_actions_used >= session.max_read_actions:
-            raise ToolError(
-                f"Read action limit reached ({session.max_read_actions})"
-            )
+        required_recovery_read = (
+            name == "read_file"
+            and normalized_path(arguments.get("path", "")) in session.required_reads
+        )
+        if required_recovery_read:
+            session.required_recovery_reads_used += 1
+        else:
+            if session.analysis_phase != AnalysisPhase.EXPLORE:
+                raise ReadBudgetExceeded(
+                    "READ_BUDGET_EXCEEDED: General inspection tools are disabled in "
+                    "SYNTHESIZE. Choose propose_edit, propose_patch, a structured "
+                    "request_evidence, or finish."
+                )
+            if session.exploration_read_actions_used >= session.max_read_actions:
+                raise ReadBudgetExceeded(
+                    "READ_BUDGET_EXCEEDED: The fixed exploration budget is exhausted. "
+                    "Enter SYNTHESIZE and choose propose_edit, propose_patch, a "
+                    "structured request_evidence, or finish."
+                )
+            session.exploration_read_actions_used += 1
         session.read_actions_used += 1
 
     handlers: dict[str, Callable[[], str]] = {
@@ -79,13 +141,21 @@ def execute_tool(
 
     if name in handlers:
         try:
-            return handlers[name](), False
+            result = handlers[name]()
+            if name in READ_TOOLS:
+                if name == "read_file":
+                    record_successful_read_range(session, arguments)
+                result = f"{result}\n\n{_budget_feedback(session)}"
+            return result, False
         except Exception as exc:  # noqa: BLE001 - surface tool errors to model
-            raise ToolError(str(exc)) from exc
+            detail = str(exc)
+            if name in READ_TOOLS:
+                detail = f"{detail}\n\n{_budget_feedback(session)}"
+            raise ToolError(detail) from exc
 
-    if name == "propose_patch":
+    if name in {"propose_patch", "propose_edit"}:
         # Controller handles validation; return marker payload.
-        return "__PROPOSE_PATCH__", True
+        return "__PROPOSE_CHANGE__", True
 
     if name == "finish":
         reason = str(arguments.get("reason", "finished"))

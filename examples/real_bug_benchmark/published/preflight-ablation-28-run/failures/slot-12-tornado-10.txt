@@ -1,0 +1,100 @@
+exit_code: 1
+duration_sec: 1.408
+environment_error: None
+error_kind: None
+failed_tests: ['safepatch_hidden/test_hidden_regression.py::HiddenWebSocketLifecycleTest::test_render_state_lives_until_close_then_releases']
+timeout_seconds: 120
+container_name: None
+network_mode: none
+user: 1000:1000
+
+--- stdout ---
+F
+=================================== FAILURES ===================================
+_ HiddenWebSocketLifecycleTest.test_render_state_lives_until_close_then_releases _
+
+self = <test_hidden_regression.HiddenWebSocketLifecycleTest testMethod=test_render_state_lives_until_close_then_releases>
+
+    @gen_test
+    def test_render_state_lives_until_close_then_releases(self):
+        instances = []
+        original = RenderMessageHandler.on_message
+    
+        def record_instance(handler, message):
+            instances.append(handler)
+            return original(handler, message)
+    
+        RenderMessageHandler.on_message = record_instance
+        try:
+            ws = yield self.ws_connect('/render')
+            ws.write_message('hidden')
+            response = yield ws.read_message()
+    
+>           self.assertEqual(response, '<b>hidden</b>')
+E           AssertionError: None != '<b>hidden</b>'
+
+safepatch_hidden/test_hidden_regression.py:21: AssertionError
+------------------------------ Captured log call -------------------------------
+ERROR    tornado.application:websocket.py:487 Uncaught exception in /render
+Traceback (most recent call last):
+  File "/work/tornado/websocket.py", line 484, in _run_callback
+    result = callback(*args, **kwargs)
+  File "/work/safepatch_hidden/test_hidden_regression.py", line 13, in record_instance
+    return original(handler, message)
+  File "/work/tornado/test/websocket_test.py", line 136, in on_message
+    self.write_message(self.render_string('message.html', message=message))
+  File "/work/tornado/web.py", line 863, in render_string
+    namespace = self.get_template_namespace()
+  File "/work/tornado/web.py", line 887, in get_template_namespace
+    namespace.update(self.ui)
+TypeError: 'NoneType' object is not iterable
+=========================== short test summary info ============================
+FAILED safepatch_hidden/test_hidden_regression.py::HiddenWebSocketLifecycleTest::test_render_state_lives_until_close_then_releases
+1 failed, 1 warning in 0.84s
+
+
+--- stderr ---
+
+
+--- traceback_summary ---
+=================================== FAILURES ===================================
+_ HiddenWebSocketLifecycleTest.test_render_state_lives_until_close_then_releases _
+
+self = <test_hidden_regression.HiddenWebSocketLifecycleTest testMethod=test_render_state_lives_until_close_then_releases>
+
+    @gen_test
+    def test_render_state_lives_until_close_then_releases(self):
+        instances = []
+        original = RenderMessageHandler.on_message
+    
+        def record_instance(handler, message):
+            instances.append(handler)
+            return original(handler, message)
+    
+        RenderMessageHandler.on_message = record_instance
+        try:
+            ws = yield self.ws_connect('/render')
+            ws.write_message('hidden')
+            response = yield ws.read_message()
+    
+>           self.assertEqual(response, '<b>hidden</b>')
+E           AssertionError: None != '<b>hidden</b>'
+
+safepatch_hidden/test_hidden_regression.py:21: AssertionError
+------------------------------ Captured log call -------------------------------
+ERROR    tornado.application:websocket.py:487 Uncaught exception in /render
+Traceback (most recent call last):
+  File "/work/tornado/websocket.py", line 484, in _run_callback
+    result = callback(*args, **kwargs)
+  File "/work/safepatch_hidden/test_hidden_regression.py", line 13, in record_instance
+    return original(handler, message)
+  File "/work/tornado/test/websocket_test.py", line 136, in on_message
+    self.write_message(self.render_string('message.html', message=message))
+  File "/work/tornado/web.py", line 863, in render_string
+    namespace = self.get_template_namespace()
+  File "/work/tornado/web.py", line 887, in get_template_namespace
+    namespace.update(self.ui)
+TypeError: 'NoneType' object is not iterable
+=========================== short test summary info ============================
+FAILED safepatch_hidden/test_hidden_regression.py::HiddenWebSocketLifecycleTest::test_render_state_lives_until_close_then_releases
+1 failed, 1 warning in 0.84s

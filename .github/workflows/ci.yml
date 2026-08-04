@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    name: Unit (${{ matrix.os }}, Python 3.11)
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install development dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Run non-Docker tests
+        run: python -m pytest -q -m "not docker_e2e"
+
+  quality:
+    name: Product quality and wheel smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install development dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Lint product code
+        run: ruff check code_agent
+      - name: Verify published benchmark evidence
+        run: |
+          python examples/real_bug_benchmark/verify_published_results.py
+          python examples/real_bug_benchmark/verify_preflight_ablation.py
+      - name: Build distributions
+        run: python -m build
+      - name: Create clean smoke environment
+        run: python -m venv .smoke-venv
+      - name: Install wheel
+        run: .smoke-venv/bin/python -m pip install dist/*.whl
+      - name: Create isolated smoke working directory
+        run: mkdir .smoke-work
+      - name: Verify packaged Docker runtime asset
+        working-directory: .smoke-work
+        run: >-
+          ../.smoke-venv/bin/python -c
+          "from importlib.resources import files;
+          assert (files('code_agent.runtime') / 'Dockerfile.pytest').is_file()"
+      - name: Run installed CLI smoke test
+        working-directory: .smoke-work
+        run: ../.smoke-venv/bin/code-agent --help

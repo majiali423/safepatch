@@ -1,0 +1,34 @@
+--- a/thefuck/shells/bash.py
++++ b/thefuck/shells/bash.py
+@@ -6,10 +6,10 @@
+ 
+ class Bash(Generic):
+     def app_alias(self, fuck):
+-        alias = "TF_ALIAS={0}" \
+-                " alias {0}='PYTHONIOENCODING=utf-8" \
+-                " TF_CMD=$(TF_SHELL_ALIASES=$(alias) thefuck $(fc -ln -1)) && " \
+-                " eval $TF_CMD".format(fuck)
++        alias = "alias {0}='TF_CMD=$(TF_ALIAS={0}" \
++                " PYTHONIOENCODING=utf-8" \
++                " TF_SHELL_ALIASES=$(alias) thefuck $(fc -ln -1)) && " \
++                " eval $TF_CMD'".format(fuck)
+ 
+         if settings.alter_history:
+             return alias + " && history -s $TF_CMD'"
+--- a/thefuck/shells/zsh.py
++++ b/thefuck/shells/zsh.py
+@@ -7,11 +7,11 @@
+ 
+ class Zsh(Generic):
+     def app_alias(self, alias_name):
+-        alias = "alias {0}='TF_ALIAS={0}" \
++        alias = "alias {0}='TF_CMD=$(TF_ALIAS={0}" \
+                 " PYTHONIOENCODING=utf-8" \
+                 ' TF_SHELL_ALIASES=$(alias)' \
+-                " TF_CMD=$(thefuck $(fc -ln -1 | tail -n 1)) &&" \
+-                " eval $TF_CMD".format(alias_name)
++                " thefuck $(fc -ln -1 | tail -n 1)) && " \
++                " eval $TF_CMD'".format(alias_name)
+ 
+         if settings.alter_history:
+             return alias + " && print -s $TF_CMD'"

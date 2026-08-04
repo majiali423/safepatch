@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "model": "deepseek-v4-flash",
+  "base_host": "api.deepseek.com",
+  "temperature": 0.1,
+  "system_prompt_sha256": "43d9e2fd253bbdfc0f7fb49076c18f8523426a7aef405dcc221d107d3c93ff69",
+  "product_files_sha256": "1ffb6e8056e7ba0e274af43c06eb54ea0df16bd26bc24fcaaeb11f2ecb8c9b47",
+  "task_assets_sha256": "5d590478d93b9506f748376c996a0693ecfe4e3ce42fecb00a0878ddce5c3b42",
+  "pricing": {
+    "effective_date": "2026-07-28",
+    "model": "deepseek-v4-flash",
+    "source": "https://api-docs.deepseek.com/quick_start/pricing/",
+    "input_cache_hit_usd_per_million": 0.0028,
+    "input_cache_miss_usd_per_million": 0.14,
+    "output_usd_per_million": 0.28
+  },
+  "reference_fix_visible_to_agent": false,
+  "hidden_tests_visible_to_agent": false,
+  "preflight_enabled": true,
+  "experiments": [
+    {
+      "name": "deepseek_v4_flash_7task_synthesis_20260730",
+      "runs": 7
+    },
+    {
+      "name": "deepseek_v4_flash_7task_synthesis_repeats_20260730",
+      "runs": 14
+    }
+  ]
+}

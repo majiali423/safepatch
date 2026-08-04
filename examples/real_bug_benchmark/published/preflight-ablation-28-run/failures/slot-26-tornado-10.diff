@@ -1,0 +1,17 @@
+--- a/tornado/websocket.py
++++ b/tornado/websocket.py
+@@ -198,6 +198,14 @@
+             self.set_status(426, "Upgrade Required")
+             self.set_header("Sec-WebSocket-Version", "7, 8, 13")
+             self.finish()
++
++    def finish(self, chunk=None):
++        # super's finish() sets self.ui = None to break reference cycles,
++        # but WebSocket handlers may need to render templates after the
++        # HTTP upgrade completes. Save and restore self.ui.
++        ui = self.ui
++        super(WebSocketHandler, self).finish(chunk=chunk)
++        self.ui = ui
+ 
+     stream = None
+ 

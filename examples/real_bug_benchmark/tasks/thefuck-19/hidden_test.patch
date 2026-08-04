@@ -1,0 +1,24 @@
+diff --git a/safepatch_hidden/test_hidden_regression.py b/safepatch_hidden/test_hidden_regression.py
+new file mode 100644
+--- /dev/null
++++ b/safepatch_hidden/test_hidden_regression.py
+@@ -0,0 +1,19 @@
++from thefuck.rules.git_push_force import get_new_command
++from thefuck.types import Command
++
++
++ERROR = """\
++! [rejected] feature -> feature (non-fast-forward)
++failed to push some refs to 'example'
++Updates were rejected because the tip of your current branch is behind
++"""
++
++
++def test_safe_force_preserves_complex_push_arguments():
++    command = Command(
++        script="git -C repo push --porcelain origin feature",
++        stdout="",
++        stderr=ERROR,
++    )
++    result = get_new_command(command)
++    assert result == "git -C repo push --force-with-lease --porcelain origin feature"

@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "task_id": "tqdm-3",
+  "accepted": true,
+  "verified_at": "2026-07-28T10:07:17.4654745Z",
+  "repository": {
+    "url": "https://github.com/tqdm/tqdm",
+    "buggy_commit": "c2599e3cd6087429f48bae34347ec5d2473c8392",
+    "fixed_commit": "73962a47026dd980ac0758820efc9c41cbf938e0",
+    "files": 65,
+    "bytes": 1197404
+  },
+  "image": {
+    "tag": "safepatch-bench-tqdm:local",
+    "digest": "sha256:d231866bca67a80fd6121f84538a3f89fbb981f6ccd2d1d7fab781cd595ebe14",
+    "base_digest": "sha256:2cfebc27956e6a55f78606864d91fe527696f9e32a724e6f9702b5f9602d0474"
+  },
+  "sandbox": {"network": "none", "cpus": 1, "memory_mib": 512, "pids_limit": 128, "container_user": "agent"},
+  "buggy_result": {"exit_code": 1, "outcome": "expected_failure", "signature": "TypeError: 'NoneType' object cannot be interpreted as an integer"},
+  "fixed_result": {"exit_code": 0, "outcome": "passed", "tests_passed": 1},
+  "hidden_result": {"buggy_exit_code": 1, "fixed_exit_code": 0, "outcome": "expected_failure_then_pass"}
+}

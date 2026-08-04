@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "task_id": "thefuck-19",
+  "accepted": true,
+  "verified_at": "2026-07-28T10:07:17.4654745Z",
+  "repository": {
+    "url": "https://github.com/nvbn/thefuck",
+    "buggy_commit": "959b96cf6ec8cedda05dc58efe0e0f3bd6ed2f4e",
+    "fixed_commit": "dc23d67a42dad54308a753639edd1ea0d15cb2e7",
+    "files": 201,
+    "bytes": 991820
+  },
+  "image": {
+    "tag": "safepatch-bench-thefuck:local",
+    "digest": "sha256:827fb9971830fc50169c3de09f34ff59d8731c6ea6303db7cf9a87c17e8abd11",
+    "base_digest": "sha256:b53f496ca43e5af6994f8e316cf03af31050bf7944e0e4a308ad86c001cf028b"
+  },
+  "sandbox": {"network": "none", "cpus": 1, "memory_mib": 512, "pids_limit": 128, "container_user": "agent", "process_hierarchy": "sh -> pytest"},
+  "buggy_result": {"exit_code": 1, "outcome": "expected_failure", "signature": "git push --force != git push --force-with-lease", "tests_failed": 3},
+  "fixed_result": {"exit_code": 0, "outcome": "passed", "tests_passed": 3},
+  "hidden_result": {"buggy_exit_code": 1, "fixed_exit_code": 0, "outcome": "expected_failure_then_pass"}
+}

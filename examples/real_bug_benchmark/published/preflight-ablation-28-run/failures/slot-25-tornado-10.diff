@@ -1,0 +1,28 @@
+--- a/tornado/websocket.py
++++ b/tornado/websocket.py
+@@ -334,6 +334,25 @@
+            Added ``close_code`` and ``close_reason`` attributes.
+         """
+         pass
++
++    def finish(self, chunk=None):
++        """Override of RequestHandler.finish to preserve self.ui
++        during the WebSocket lifecycle. The normal HTTP finish during
++        the upgrade would set self.ui = None, breaking render_string
++        in on_message."""
++        if self._finished:
++            return
++        # Save ui before the parent clears it
++        saved_ui = self.ui
++        super(WebSocketHandler, self).finish(chunk)
++        # Restore ui so it is available for on_message etc.
++        self.ui = saved_ui
++
++    def on_connection_close(self):
++        """Override to clean up self.ui when the websocket connection
++        actually closes."""
++        super(WebSocketHandler, self).on_connection_close()
++        self.ui = None
+ 
+     def close(self, code=None, reason=None):
+         """Closes this Web Socket.

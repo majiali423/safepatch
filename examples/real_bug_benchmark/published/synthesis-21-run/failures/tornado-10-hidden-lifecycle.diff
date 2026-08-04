@@ -1,0 +1,12 @@
+--- a/tornado/web.py
++++ b/tornado/web.py
+@@ -884,7 +884,8 @@
+             xsrf_form_html=self.xsrf_form_html,
+             reverse_url=self.reverse_url
+         )
+-        namespace.update(self.ui)
++        if self.ui is not None:
++            namespace.update(self.ui)
+         return namespace
+ 
+     def create_template_loader(self, template_path):

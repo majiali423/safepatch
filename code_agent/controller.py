@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 import shutil
+import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from code_agent.llm import (
     FORMAT_RETRY_HINT,
@@ -20,6 +21,7 @@ from code_agent.patching.applier import (
 from code_agent.patching.hashes import patch_hash, working_tree_hash
 from code_agent.patching.preflight import PatchPreflight, PreflightFailure
 from code_agent.patching.proposal import parse_proposal
+from code_agent.patching.structured_edit import StructuredEditError, build_structured_proposal
 from code_agent.patching.validator import PolicyValidator, ValidationResult
 from code_agent.repository.git_diff import (
     changed_files_from_diff,
@@ -32,17 +34,32 @@ from code_agent.repository.workspace import import_repository
 from code_agent.runtime.docker_pytest import DockerPytestRunner
 from code_agent.state import (
     TERMINAL_STATUSES,
+    AnalysisPhase,
     ApprovalBinding,
     AttemptRecord,
     PatchProposal,
     SessionStatus,
     TaskSession,
+    TokenUsage,
 )
-from code_agent.tools.registry import ToolError, ToolRegistry, execute_tool
+from code_agent.tools.registry import (
+    READ_TOOLS,
+    ReadBudgetExceeded,
+    ToolError,
+    ToolRegistry,
+    execute_tool,
+)
+from code_agent.tools.request_evidence import (
+    EvidenceErrorKind,
+    EvidenceRequestError,
+    execute_request_evidence,
+)
 from code_agent.tracing.recorder import TraceRecorder
 
 ApprovalFn = Callable[[ApprovalBinding, int], bool]
 MessageFn = Callable[[str], None]
+# Inspection tools counted as read_tool_calls (budgeted READ_TOOLS + get_current_diff).
+_READ_LIKE_TOOLS = READ_TOOLS | {"get_current_diff"}
 
 
 class TaskController:
@@ -58,6 +75,9 @@ class TaskController:
         allow_test_changes: bool = False,
         allow_new_tests: bool = True,
         policy: PolicyValidator | None = None,
+        preflight_enabled: bool = True,
+        wall_time: Callable[[], float] | None = None,
+        monotonic: Callable[[], float] | None = None,
     ) -> None:
         self.llm = llm
         self.runner = runner or DockerPytestRunner()
@@ -71,6 +91,9 @@ class TaskController:
             allow_test_changes=allow_test_changes,
             allow_new_tests=allow_new_tests,
         )
+        self.preflight_enabled = preflight_enabled
+        self._wall_time = wall_time or time.time
+        self._monotonic = monotonic or time.perf_counter
 
     def run(self, repo_path: Path, bug_description: str) -> TaskSession:
         imported = import_repository(repo_path, self.session_base)
@@ -83,6 +106,7 @@ class TaskController:
             bug_description=bug_description,
             status=SessionStatus.CREATED,
         )
+        self._init_observability(session)
         trace = TraceRecorder(session.artifacts_dir / "trace.jsonl")
         trace.emit(
             "session_created",
@@ -149,10 +173,7 @@ class TaskController:
                 # Approval bound to hashes — reject if working tree moved.
                 current_wt = working_tree_hash(session.workspace_root)
                 current_ph = patch_hash(proposal.unified_diff)
-                if (
-                    current_wt != binding.working_tree_hash
-                    or current_ph != binding.patch_hash
-                ):
+                if current_wt != binding.working_tree_hash or current_ph != binding.patch_hash:
                     session.status = SessionStatus.PATCH_BASE_CHANGED
                     session.stop_reason = "patch_base_changed"
                     session.last_error = (
@@ -180,8 +201,17 @@ class TaskController:
                     allow_new_tests=self.allow_new_tests,
                 )
                 if not apply_result.ok:
-                    session.patch_apply_failures_after_preflight += 1
-                    err = apply_result.error or "apply failed after preflight"
+                    if self.preflight_enabled:
+                        session.patch_apply_failures_after_preflight += 1
+                        event = "patch_apply_failed_after_preflight"
+                        feedback_label = "PATCH_APPLY_FAILED_AFTER_PREFLIGHT"
+                        default_error = "apply failed after preflight"
+                    else:
+                        session.patch_apply_failures_without_preflight += 1
+                        event = "patch_apply_failed_without_preflight"
+                        feedback_label = "PATCH_APPLY_FAILED"
+                        default_error = "patch apply failed"
+                    err = apply_result.error or default_error
                     error_kind = classify_apply_error_kind(
                         error_kind=apply_result.error_kind,
                         error=err,
@@ -190,7 +220,7 @@ class TaskController:
                     if rollback_succeeded is None:
                         rollback_succeeded = True
                     trace.emit(
-                        "patch_apply_failed_after_preflight",
+                        event,
                         attempt=next_attempt_no,
                         error=err,
                         error_kind=error_kind,
@@ -199,9 +229,7 @@ class TaskController:
                         patch_hash=binding.patch_hash,
                         working_tree_hash=binding.working_tree_hash,
                     )
-                    self.say(
-                        f"Patch apply failed after preflight ({error_kind}): {err}"
-                    )
+                    self.say(f"Patch apply failed ({error_kind}): {err}")
                     session.attempts.append(
                         AttemptRecord(
                             attempt=next_attempt_no,
@@ -228,7 +256,7 @@ class TaskController:
                         break
 
                     session.last_apply_feedback = (
-                        "PATCH_APPLY_FAILED_AFTER_PREFLIGHT:\n"
+                        f"{feedback_label}:\n"
                         f"error_kind={error_kind}\n"
                         f"{err}\n"
                         "Re-read the target file and propose_patch again with an "
@@ -239,6 +267,13 @@ class TaskController:
                         session.stop_reason = "patch_not_applicable"
                         session.last_error = err
                         break
+                    self._require_apply_failure_region_read(
+                        session,
+                        trace,
+                        apply_result.target_file,
+                        apply_result.line_no,
+                        error_kind,
+                    )
                     self._consume_regeneration(session, trace, reason=err)
                     session.status = SessionStatus.ANALYZING
                     continue
@@ -272,6 +307,7 @@ class TaskController:
 
                 session.status = SessionStatus.TESTING
                 self.say(f"Running Docker pytest (attempt {session.attempts_used})...")
+                session.observability.post_apply_pytest_runs += 1
                 test_result = self.runner.run_pytest(
                     session.workspace_root,
                     log_path=session.artifacts_dir / f"attempt-{session.attempts_used}.log",
@@ -313,10 +349,11 @@ class TaskController:
                     break
                 session.status = SessionStatus.ANALYZING
 
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             session.status = SessionStatus.ERROR
             session.stop_reason = "internal_error"
             session.last_error = str(exc)
+            self._finish_observability(session)
             trace.emit("session_finished", status=session.status.value, error=str(exc))
             self._write_artifacts(session, snapshot_root)
             raise
@@ -324,6 +361,22 @@ class TaskController:
         self._finalize(session, trace, snapshot_root)
         return session
 
+    def _init_observability(self, session: TaskSession) -> None:
+        obs = session.observability
+        obs.start(wall_time=self._wall_time, monotonic=self._monotonic)
+        obs.model_provider = self.llm.provider_name
+        obs.model_name = self.llm.model
+        obs.tool_calling_protocol = self.llm.tool_calling_protocol
+        obs.temperature = getattr(self.llm, "temperature", None)
+        # Count provider attempts at invocation start (inside LLMClient._fetch_raw).
+        self.llm.on_provider_invocation = obs.note_provider_invocation
+
+    def _finish_observability(self, session: TaskSession) -> None:
+        if session.observability.finished_at is None:
+            session.observability.finish(wall_time=self._wall_time, monotonic=self._monotonic)
+
+    def _record_call_usage(self, session: TaskSession, usage: TokenUsage | None) -> None:
+        session.observability.record_call_usage(usage)
 
     def _import_phase(self, session, imported, trace, snapshot_root) -> None:
         session.status = SessionStatus.IMPORTED
@@ -347,6 +400,7 @@ class TaskController:
 
     def _baseline_phase(self, session: TaskSession, trace: TraceRecorder) -> None:
         self.say("Running baseline pytest in Docker...")
+        session.observability.baseline_pytest_runs += 1
         result = self.runner.run_pytest(
             session.workspace_root,
             log_path=session.artifacts_dir / "baseline.log",
@@ -369,8 +423,7 @@ class TaskController:
             return
         session.status = SessionStatus.BASELINE_TESTED
         self.say(
-            f"Baseline finished: exit={result.exit_code}, "
-            f"failed={result.failed_tests or 'none'}"
+            f"Baseline finished: exit={result.exit_code}, failed={result.failed_tests or 'none'}"
         )
 
     def _analyze_phase(
@@ -381,20 +434,35 @@ class TaskController:
     ) -> ApprovalBinding | None:
         session.status = SessionStatus.ANALYZING
         session.consecutive_format_retries = 0
+        if session.analysis_phase == AnalysisPhase.PROPOSE:
+            session.analysis_phase = AnalysisPhase.SYNTHESIZE
+        if (
+            session.analysis_phase == AnalysisPhase.EXPLORE
+            and session.exploration_read_actions_used >= session.max_read_actions
+        ):
+            session.analysis_phase = AnalysisPhase.SYNTHESIZE
+            trace.emit(
+                "synthesis_started",
+                reason="exploration_budget_exhausted",
+                exploration_reads=session.exploration_read_actions_used,
+            )
         registry = ToolRegistry(session=session, snapshot_root=snapshot_root)
-        messages = [
-            {"role": "user", "content": self._build_user_prompt(session, snapshot_root)}
-        ]
+        messages = [{"role": "user", "content": self._build_user_prompt(session, snapshot_root)}]
 
         for step in range(self.max_analysis_steps):
             trace.emit("model_request", step=step, messages_tail=messages[-1])
             try:
                 response = self.llm.complete(messages)
+                self._record_call_usage(session, response.usage)
             except ModelOutputError as exc:
+                # Invocation already counted; record usage outcome (may be null).
+                self._record_call_usage(session, getattr(exc, "usage", None))
                 if self._handle_format_error(session, trace, messages, step, exc):
                     return None
                 continue
             except LLMError as exc:
+                if getattr(exc, "provider_invoked", False):
+                    self._record_call_usage(session, None)
                 session.status = SessionStatus.ERROR
                 session.stop_reason = "llm_error"
                 session.last_error = str(exc)
@@ -411,25 +479,98 @@ class TaskController:
                 tool=response.tool,
             )
             self.say(f"Agent tool: {response.tool}")
+            session.observability.tool_calls_total += 1
+            if response.tool not in READ_TOOLS:
+                session.consecutive_read_budget_violations = 0
 
-            if response.tool == "propose_patch":
+            if response.tool == "request_evidence":
+                session.observability.read_tool_calls += 1
                 try:
-                    proposal = parse_proposal(
-                        response.args, raw_text=response.raw_text
+                    result_text = execute_request_evidence(session, response.args)
+                except EvidenceRequestError as exc:
+                    if self._handle_evidence_error(
+                        session,
+                        trace,
+                        messages,
+                        response.raw_text,
+                        response.args,
+                        exc,
+                    ):
+                        return None
+                    continue
+                session.consecutive_no_progress_actions = 0
+                session.consecutive_read_budget_violations = 0
+                trace.emit(
+                    "evidence_requested",
+                    args=response.args,
+                    request_number=session.evidence_requests_used,
+                    remaining=(
+                        session.max_evidence_requests - session.evidence_requests_used
+                    ),
+                )
+                trace.emit(
+                    "tool_result",
+                    tool="request_evidence",
+                    ok=True,
+                    result_preview=result_text[:4000],
+                )
+                messages.append({"role": "assistant", "content": response.raw_text})
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": f"TOOL_RESULT (request_evidence):\n{result_text}",
+                    }
+                )
+                continue
+
+            if response.tool in {"propose_patch", "propose_edit"}:
+                session.analysis_phase = AnalysisPhase.PROPOSE
+                session.consecutive_no_progress_actions = 0
+                if session.required_reads:
+                    feedback = self._required_read_feedback(session)
+                    trace.emit(
+                        "proposal_blocked_required_read",
+                        required_reads=self._required_reads_payload(session),
                     )
+                    messages.append({"role": "assistant", "content": response.raw_text})
+                    messages.append({"role": "user", "content": feedback})
+                    continue
+                try:
+                    if response.tool == "propose_edit":
+                        proposal = build_structured_proposal(
+                            response.args,
+                            session.workspace_root,
+                            raw_text=response.raw_text,
+                        )
+                    else:
+                        proposal = parse_proposal(
+                            response.args,
+                            raw_text=response.raw_text,
+                        )
                 except ModelOutputError as exc:
+                    session.analysis_phase = AnalysisPhase.SYNTHESIZE
                     if self._handle_format_error(session, trace, messages, step, exc):
                         return None
                     continue
-
-                validation = self.policy.validate(
-                    proposal, session.workspace_root
-                )
-                if not validation.ok:
-                    # Policy failures: feedback loop, NOT format/regeneration retry.
-                    err = "Patch validation failed:\n- " + "\n- ".join(
-                        validation.errors
+                except StructuredEditError as exc:
+                    session.analysis_phase = AnalysisPhase.SYNTHESIZE
+                    err = f"STRUCTURED_EDIT_REJECTED: {exc}"
+                    trace.emit(
+                        "tool_result",
+                        tool="propose_edit",
+                        ok=False,
+                        error=err,
                     )
+                    messages.append({"role": "assistant", "content": response.raw_text})
+                    messages.append({"role": "user", "content": err})
+                    continue
+
+                session.observability.proposal_calls += 1
+                validation = self.policy.validate(proposal, session.workspace_root)
+                if not validation.ok:
+                    session.analysis_phase = AnalysisPhase.SYNTHESIZE
+                    # Policy failures: feedback loop, NOT format/regeneration retry.
+                    err = "Patch validation failed:\n- " + "\n- ".join(validation.errors)
                     trace.emit(
                         "tool_result",
                         tool="propose_patch",
@@ -437,9 +578,7 @@ class TaskController:
                         error=err,
                         validation=validation.to_dict(),
                     )
-                    messages.append(
-                        {"role": "assistant", "content": response.raw_text}
-                    )
+                    messages.append({"role": "assistant", "content": response.raw_text})
                     messages.append({"role": "user", "content": err})
                     continue
 
@@ -459,17 +598,28 @@ class TaskController:
                     return binding
                 if session.status in TERMINAL_STATUSES:
                     return None
+                session.analysis_phase = AnalysisPhase.SYNTHESIZE
                 continue
 
             if response.tool == "finish":
                 reason = str(response.args.get("reason", "finished"))
-                session.stop_reason = reason
+                session.analysis_phase = AnalysisPhase.FINISH
+                session.status = SessionStatus.ERROR
+                session.stop_reason = "agent_finished_without_patch"
+                session.last_error = reason
+                trace.emit("analysis_finished_without_patch", reason=reason)
                 return None
 
+            if response.tool in _READ_LIKE_TOOLS:
+                session.observability.read_tool_calls += 1
             try:
-                result_text, _terminal = execute_tool(
-                    registry, response.tool, response.args
+                was_required_recovery_read = (
+                    response.tool == "read_file"
+                    and self._normalize_tool_path(response.args.get("path", ""))
+                    in session.required_reads
                 )
+                result_text, _terminal = execute_tool(registry, response.tool, response.args)
+                session.consecutive_read_budget_violations = 0
                 trace.emit(
                     "tool_call",
                     tool=response.tool,
@@ -481,8 +631,107 @@ class TaskController:
                     ok=True,
                     result_preview=result_text[:4000],
                 )
+                if response.tool == "read_file":
+                    self._record_required_read_if_satisfied(
+                        session,
+                        trace,
+                        response.args,
+                    )
+                if response.tool in READ_TOOLS:
+                    remaining = max(
+                        session.max_read_actions
+                        - session.exploration_read_actions_used,
+                        0,
+                    )
+                    trace.emit(
+                        "read_budget_state",
+                        tool=response.tool,
+                        used=session.read_actions_used,
+                        exploration_used=session.exploration_read_actions_used,
+                        max=session.max_read_actions,
+                        remaining=remaining,
+                        warning=0 < remaining <= 3,
+                        exhausted=remaining == 0,
+                        required_recovery_read=was_required_recovery_read,
+                    )
+                    if (
+                        remaining == 0
+                        and session.analysis_phase == AnalysisPhase.EXPLORE
+                    ):
+                        session.analysis_phase = AnalysisPhase.SYNTHESIZE
+                        trace.emit(
+                            "synthesis_started",
+                            reason="exploration_budget_exhausted",
+                            exploration_reads=session.exploration_read_actions_used,
+                        )
+            except ReadBudgetExceeded as exc:
+                session.consecutive_no_progress_actions += 1
+                session.total_no_progress_actions += 1
+                session.consecutive_read_budget_violations = (
+                    session.consecutive_no_progress_actions
+                )
+                session.total_read_budget_violations += 1
+                violation = session.consecutive_no_progress_actions
+                result_text = (
+                    f"{exc}\n"
+                    f"consecutive_no_progress_actions={violation}/2\n"
+                    "General exploration is closed. Use request_evidence for a "
+                    "justified missing range, propose a change, or finish."
+                )
+                trace.emit(
+                    "synthesis_no_progress",
+                    tool=response.tool,
+                    args=response.args,
+                    used=session.read_actions_used,
+                    exploration_used=session.exploration_read_actions_used,
+                    max=session.max_read_actions,
+                    consecutive_violations=violation,
+                    total_violations=session.total_read_budget_violations,
+                )
+                messages.append({"role": "assistant", "content": response.raw_text})
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": f"TOOL_RESULT ({response.tool}):\n{result_text}",
+                    }
+                )
+                if violation >= 2:
+                    session.status = SessionStatus.READ_BUDGET_EXHAUSTED
+                    session.stop_reason = "synthesis_no_progress"
+                    session.last_error = (
+                        "Model requested two consecutive general inspection actions "
+                        "after entering SYNTHESIZE"
+                    )
+                    trace.emit(
+                        "read_budget_exhausted_terminal",
+                        used=session.read_actions_used,
+                        exploration_used=session.exploration_read_actions_used,
+                        max=session.max_read_actions,
+                        reason="synthesis_no_progress",
+                        total_violations=session.total_read_budget_violations,
+                    )
+                    return None
+                continue
             except (ToolError, Exception) as exc:  # noqa: BLE001
                 result_text = f"ERROR: {exc}"
+                if response.tool in READ_TOOLS:
+                    session.consecutive_read_budget_violations = 0
+                    remaining = max(
+                        session.max_read_actions
+                        - session.exploration_read_actions_used,
+                        0,
+                    )
+                    trace.emit(
+                        "read_budget_state",
+                        tool=response.tool,
+                        used=session.read_actions_used,
+                        exploration_used=session.exploration_read_actions_used,
+                        max=session.max_read_actions,
+                        remaining=remaining,
+                        warning=0 < remaining <= 3,
+                        exhausted=remaining == 0,
+                        tool_error=True,
+                    )
                 trace.emit(
                     "tool_result",
                     tool=response.tool,
@@ -499,8 +748,114 @@ class TaskController:
             )
 
         session.last_error = "Analysis step limit reached without patch"
-        session.stop_reason = "analysis_step_limit"
+        if session.analysis_phase == AnalysisPhase.SYNTHESIZE:
+            session.status = SessionStatus.READ_BUDGET_EXHAUSTED
+            session.stop_reason = "synthesis_step_limit"
+        else:
+            session.stop_reason = "analysis_step_limit"
         return None
+
+    def _handle_evidence_error(
+        self,
+        session: TaskSession,
+        trace: TraceRecorder,
+        messages: list[dict[str, str]],
+        raw_assistant: str,
+        arguments: dict[str, object],
+        error: EvidenceRequestError,
+    ) -> bool:
+        """Record a rejected evidence request; return True when terminal."""
+        kind = error.kind
+        promoted_parameter_error = False
+        if kind == EvidenceErrorKind.PARAMETER:
+            if (
+                session.evidence_parameter_corrections_used
+                < session.max_evidence_parameter_corrections
+            ):
+                session.evidence_parameter_corrections_used += 1
+                feedback = (
+                    f"{error}\n"
+                    "CORRECTION_AVAILABLE: This parameter error did not consume an "
+                    "evidence request or count as no progress. Correct it once. A "
+                    "later parameter error is classified as no progress."
+                )
+                trace.emit(
+                    "evidence_request_rejected",
+                    kind=kind.value,
+                    args=arguments,
+                    correction_granted=True,
+                    corrections_used=session.evidence_parameter_corrections_used,
+                )
+                messages.append({"role": "assistant", "content": raw_assistant})
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": f"TOOL_RESULT (request_evidence):\n{feedback}",
+                    }
+                )
+                return False
+            kind = EvidenceErrorKind.NO_PROGRESS
+            promoted_parameter_error = True
+
+        if kind == EvidenceErrorKind.HARD_VIOLATION:
+            session.hard_policy_violations += 1
+            session.status = SessionStatus.READ_BUDGET_EXHAUSTED
+            session.stop_reason = "evidence_hard_violation"
+            session.last_error = str(error)
+            trace.emit(
+                "evidence_request_rejected",
+                kind=kind.value,
+                args=arguments,
+                correction_granted=False,
+            )
+            trace.emit(
+                "read_budget_exhausted_terminal",
+                reason="evidence_hard_violation",
+                evidence_requests_used=session.evidence_requests_used,
+            )
+            return True
+
+        session.consecutive_no_progress_actions += 1
+        session.total_no_progress_actions += 1
+        session.consecutive_read_budget_violations = (
+            session.consecutive_no_progress_actions
+        )
+        session.total_read_budget_violations += 1
+        feedback = (
+            f"{error}\n"
+            f"consecutive_no_progress_actions="
+            f"{session.consecutive_no_progress_actions}/2\n"
+            "Use existing evidence, request a different justified range, propose a "
+            "change, or finish."
+        )
+        trace.emit(
+            "evidence_request_rejected",
+            kind=kind.value,
+            original_kind=error.kind.value,
+            promoted_parameter_error=promoted_parameter_error,
+            args=arguments,
+            correction_granted=False,
+            consecutive_no_progress=session.consecutive_no_progress_actions,
+        )
+        messages.append({"role": "assistant", "content": raw_assistant})
+        messages.append(
+            {
+                "role": "user",
+                "content": f"TOOL_RESULT (request_evidence):\n{feedback}",
+            }
+        )
+        if session.consecutive_no_progress_actions < 2:
+            return False
+
+        session.status = SessionStatus.READ_BUDGET_EXHAUSTED
+        session.stop_reason = "synthesis_no_progress"
+        session.last_error = "Two consecutive no-progress actions in SYNTHESIZE"
+        trace.emit(
+            "read_budget_exhausted_terminal",
+            reason="synthesis_no_progress",
+            evidence_requests_used=session.evidence_requests_used,
+        )
+        return True
 
     def _run_preflight(
         self,
@@ -511,6 +866,21 @@ class TaskController:
         messages: list[dict[str, str]],
         raw_assistant: str,
     ) -> ApprovalBinding | None:
+        if not self.preflight_enabled:
+            binding = ApprovalBinding(
+                patch_hash=patch_hash(proposal.unified_diff),
+                working_tree_hash=working_tree_hash(session.workspace_root),
+                proposal=proposal,
+                validation=validation,
+            )
+            trace.emit(
+                "patch_preflight_bypassed",
+                attempt=session.attempts_used + 1,
+                patch_hash=binding.patch_hash,
+                working_tree_hash=binding.working_tree_hash,
+            )
+            return binding
+
         trace.emit(
             "patch_preflight_started",
             attempt=session.attempts_used + 1,
@@ -520,8 +890,10 @@ class TaskController:
         result = PatchPreflight.run(proposal, session.workspace_root)
 
         if isinstance(result, PreflightFailure) or not result.ok:
-            failure = result if isinstance(result, PreflightFailure) else PreflightFailure(
-                detail="preflight failed"
+            failure = (
+                result
+                if isinstance(result, PreflightFailure)
+                else PreflightFailure(detail="preflight failed")
             )
             session.patch_preflight_failures += 1
             if session.first_patch_applicable is None:
@@ -543,6 +915,7 @@ class TaskController:
                 session.last_error = failure.detail
                 return None
 
+            self._require_failure_region_read(session, trace, failure)
             self._consume_regeneration(session, trace, reason=failure.detail)
             feedback = failure.feedback_message()
             messages.append({"role": "assistant", "content": raw_assistant})
@@ -567,13 +940,141 @@ class TaskController:
             patch_hash=result.patch_hash,
             working_tree_hash=result.working_tree_hash,
             files=result.files,
+            relocations=result.relocations,
         )
         return binding
 
+    @staticmethod
+    def _normalize_tool_path(path: object) -> str:
+        return str(path).replace("\\", "/").removeprefix("./")
+
+    @staticmethod
+    def _required_reads_payload(session: TaskSession) -> list[dict[str, int | str]]:
+        return [
+            {"path": path, "start_line": bounds[0], "end_line": bounds[1]}
+            for path, bounds in sorted(session.required_reads.items())
+        ]
+
+    def _required_read_feedback(self, session: TaskSession) -> str:
+        requests = self._required_reads_payload(session)
+        lines = [
+            "REQUIRED_READ_MISSING: the previous patch used stale file context.",
+            "Before proposing any new patch, perform every required read below:",
+        ]
+        lines.extend(
+            f"- read_file(path={item['path']!r}, start_line={item['start_line']}, "
+            f"end_line={item['end_line']})"
+            for item in requests
+        )
+        lines.append("A search result or a read of a different range does not satisfy this gate.")
+        return "\n".join(lines)
+
+    def _require_failure_region_read(
+        self,
+        session: TaskSession,
+        trace: TraceRecorder,
+        failure: PreflightFailure,
+    ) -> None:
+        if (
+            not failure.target_file
+            or failure.suggested_read_start is None
+            or failure.suggested_read_end is None
+        ):
+            return
+        path = self._normalize_tool_path(failure.target_file)
+        self._register_required_read(
+            session,
+            trace,
+            path=path,
+            start_line=failure.suggested_read_start,
+            end_line=failure.suggested_read_end,
+            error_kind=failure.error_kind,
+        )
+
+    def _require_apply_failure_region_read(
+        self,
+        session: TaskSession,
+        trace: TraceRecorder,
+        target_file: str | None,
+        line_no: int | None,
+        error_kind: str,
+    ) -> None:
+        if not target_file:
+            return
+        path = self._normalize_tool_path(target_file)
+        target = (session.workspace_root / path).resolve()
+        try:
+            target.relative_to(session.workspace_root.resolve())
+        except ValueError:
+            return
+        if not target.is_file():
+            return
+        try:
+            line_count = max(len(target.read_text(encoding="utf-8").splitlines()), 1)
+        except (OSError, UnicodeDecodeError):
+            return
+        center = min(max(line_no or 1, 1), line_count)
+        self._register_required_read(
+            session,
+            trace,
+            path=path,
+            start_line=max(1, center - 8),
+            end_line=min(line_count, center + 8),
+            error_kind=error_kind,
+        )
+
+    @staticmethod
+    def _register_required_read(
+        session: TaskSession,
+        trace: TraceRecorder,
+        *,
+        path: str,
+        start_line: int,
+        end_line: int,
+        error_kind: str,
+    ) -> None:
+        session.required_reads[path] = (
+            start_line,
+            end_line,
+        )
+        trace.emit(
+            "required_read_registered",
+            path=path,
+            start_line=start_line,
+            end_line=end_line,
+            error_kind=error_kind,
+        )
+
+    def _record_required_read_if_satisfied(
+        self,
+        session: TaskSession,
+        trace: TraceRecorder,
+        arguments: dict[str, object],
+    ) -> None:
+        path = self._normalize_tool_path(arguments.get("path", ""))
+        required = session.required_reads.get(path)
+        if required is None:
+            return
+        try:
+            start = int(arguments.get("start_line", 1))
+            raw_end = arguments.get("end_line")
+            end = int(raw_end) if raw_end is not None else start + 119
+        except (TypeError, ValueError):
+            return
+        if start <= required[0] and end >= required[1]:
+            del session.required_reads[path]
+            trace.emit(
+                "required_read_satisfied",
+                path=path,
+                requested_start_line=start,
+                requested_end_line=end,
+                required_start_line=required[0],
+                required_end_line=required[1],
+            )
+
     def _regeneration_exhausted(self, session: TaskSession) -> bool:
         return (
-            session.consecutive_patch_regeneration_retries
-            >= session.max_patch_regeneration_retries
+            session.consecutive_patch_regeneration_retries >= session.max_patch_regeneration_retries
         )
 
     def _consume_regeneration(
@@ -653,6 +1154,16 @@ class TaskController:
         parts = [
             f"Bug / request:\n{session.bug_description}",
             "",
+            f"Analysis phase: {session.analysis_phase.value}",
+            (
+                "Exploration reads: "
+                f"{session.exploration_read_actions_used}/{session.max_read_actions}"
+            ),
+            (
+                "Structured evidence requests: "
+                f"{session.evidence_requests_used}/{session.max_evidence_requests}"
+            ),
+            "",
             "Repository map:",
             session.repo_map_text,
             "",
@@ -695,11 +1206,21 @@ class TaskController:
                 "",
                 f"Changed files so far: {session.changed_files}",
             ]
-        parts.append(
-            "Investigate with tools, then propose_patch. "
-            "Incremental patches apply on the current working copy. "
-            "If a patch fails preflight, read_file the target again before regenerating."
-        )
+        if session.analysis_phase == AnalysisPhase.EXPLORE:
+            parts.append(
+                "Investigate with tools, then propose a change. The controller enters "
+                "SYNTHESIZE after 12 exploration reads. Incremental patches apply on "
+                "the current working copy. If a patch fails preflight, read_file the "
+                "required target range before regenerating."
+            )
+        else:
+            parts.append(
+                "SYNTHESIZE now: free exploration is closed. Map every clause in the "
+                "task description to existing evidence. For state/resource changes, "
+                "check creation, active use, normal cleanup, and error/close cleanup. "
+                "Choose propose_edit, propose_patch, one justified request_evidence "
+                "if allowance remains, or finish."
+            )
         return "\n".join(parts)
 
     def _finalize(
@@ -708,6 +1229,7 @@ class TaskController:
         trace: TraceRecorder,
         snapshot_root: Path,
     ) -> None:
+        self._finish_observability(session)
         self._write_artifacts(session, snapshot_root)
         trace.emit(
             "session_finished",
@@ -739,6 +1261,7 @@ class TaskController:
             SessionStatus.TEST_ENVIRONMENT_ERROR,
             SessionStatus.TEST_TIMEOUT,
             SessionStatus.MODEL_OUTPUT_INVALID,
+            SessionStatus.READ_BUDGET_EXHAUSTED,
             SessionStatus.PATCH_NOT_APPLICABLE,
             SessionStatus.PATCH_BASE_CHANGED,
         }:

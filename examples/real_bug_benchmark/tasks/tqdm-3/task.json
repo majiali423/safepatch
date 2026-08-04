@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "tqdm-3",
+  "repository": "https://github.com/tqdm/tqdm",
+  "buggy_commit": "c2599e3cd6087429f48bae34347ec5d2473c8392",
+  "fixed_commit": "73962a47026dd980ac0758820efc9c41cbf938e0",
+  "task_python": "3.6.15",
+  "prompt": "Boolean conversion should work for tqdm objects backed by sized and unsized iterables, and be undefined only when neither iterable nor total exists.",
+  "public_test_patch": "public_test.patch",
+  "hidden_test_patch": "hidden_test.patch",
+  "hidden_test_command": [
+    "python",
+    "-m",
+    "pytest",
+    "safepatch_hidden/test_hidden_regression.py::test_explicit_total_takes_precedence_over_iterable_truthiness",
+    "-q",
+    "-s",
+    "--disable-warnings"
+  ],
+  "test_command": [
+    "python",
+    "-m",
+    "pytest",
+    "tqdm/tests/tests_tqdm.py::test_bool",
+    "-q",
+    "--disable-warnings"
+  ],
+  "failure_signature": "TypeError: 'NoneType' object cannot be interpreted as an integer"
+}

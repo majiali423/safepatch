@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "id": "thefuck-16",
+  "repository": "https://github.com/nvbn/thefuck",
+  "buggy_commit": "d92765d5df6607cb2f2fb67cee7b63f64ac7aa6b",
+  "fixed_commit": "bb5f6bb705a3b217eb682f3357ec6bbb709555c1",
+  "task_python": "3.7.17",
+  "prompt": "Generated Bash and Zsh aliases must scope TF_ALIAS, PYTHONIOENCODING, and TF_SHELL_ALIASES inside the alias command substitution so evaluating the alias does not leak variables and still produces TF_CMD correctly.",
+  "public_test_patch": "public_test.patch",
+  "hidden_test_patch": "hidden_test.patch",
+  "hidden_test_command": [
+    "sh",
+    "-c",
+    "python -m pytest safepatch_hidden/test_hidden_regression.py::test_custom_alias_scopes_variables_inside_alias -q -s --disable-warnings"
+  ],
+  "test_command": [
+    "sh",
+    "-c",
+    "python -m pytest tests/shells/test_bash.py::TestBash::test_app_alias_variables_correctly_set tests/shells/test_zsh.py::TestZsh::test_app_alias_variables_correctly_set -q -s --disable-warnings"
+  ],
+  "failure_signature": "TF_CMD=$(TF_ALIAS"
+}

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -10,7 +10,7 @@ import pytest
 
 from code_agent.controller import TaskController
 from code_agent.llm import LLMClient
-from code_agent.patching.applier import PatchApplier, apply_proposal
+from code_agent.patching.applier import PatchApplier
 from code_agent.patching.validator import MAX_CHANGED_LINES, PolicyValidator
 from code_agent.repository.workspace import WorkspaceError, import_repository, safe_resolve
 from code_agent.runtime.docker_pytest import DockerPytestRunner
@@ -269,7 +269,7 @@ def test_failed_max_attempts(tmp_path: Path):
     class LocalRunner:
         def run_pytest(self, workspace_root, *, log_path=None):
             proc = subprocess.run(
-                ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider"],
+                [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"],
                 cwd=workspace_root,
                 capture_output=True,
                 text=True,
@@ -327,7 +327,7 @@ def test_source_repo_not_modified_on_success(tmp_path: Path):
         def run_pytest(self, workspace_root, *, log_path=None):
             started = time.time()
             proc = subprocess.run(
-                ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider"],
+                [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider"],
                 cwd=workspace_root,
                 capture_output=True,
                 text=True,

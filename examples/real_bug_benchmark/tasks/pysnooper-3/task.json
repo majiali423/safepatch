@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "id": "pysnooper-3",
+  "repository": "https://github.com/cool-RR/PySnooper",
+  "buggy_commit": "6e3d797be3fa0a746fb5b1b7c7fea78eb926c208",
+  "fixed_commit": "15555ed760000b049aff8fecc79d29339c1224c3",
+  "task_python": "3.8.20",
+  "prompt": "When @pysnooper.snoop receives a filesystem path, tracing should append to that path instead of raising an exception.",
+  "public_test_patch": "public_test.patch",
+  "hidden_test_patch": "hidden_test.patch",
+  "hidden_test_command": [
+    "python",
+    "-m",
+    "pytest",
+    "safepatch_hidden/test_hidden_regression.py::test_pathlike_output_appends_without_truncating",
+    "-q",
+    "-s",
+    "--disable-warnings"
+  ],
+  "test_command": [
+    "python",
+    "-m",
+    "pytest",
+    "tests/test_pysnooper.py::test_file_output",
+    "-q",
+    "-s",
+    "--disable-warnings"
+  ],
+  "failure_signature": "NameError: name 'output_path' is not defined"
+}

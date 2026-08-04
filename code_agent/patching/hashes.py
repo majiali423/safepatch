@@ -8,6 +8,11 @@ from pathlib import Path
 _SKIP_DIR_NAMES = frozenset({"__pycache__", ".pytest_cache"})
 
 
+def file_revision(path: Path) -> str:
+    """Content revision used to bind a model read to a later edit."""
+    return f"sha256:{hashlib.sha256(path.read_bytes()).hexdigest()}"
+
+
 def patch_hash(unified_diff: str) -> str:
     return hashlib.sha256(unified_diff.encode("utf-8")).hexdigest()
 

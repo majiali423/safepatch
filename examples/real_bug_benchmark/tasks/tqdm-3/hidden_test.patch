@@ -1,0 +1,22 @@
+diff --git a/safepatch_hidden/test_hidden_regression.py b/safepatch_hidden/test_hidden_regression.py
+new file mode 100644
+--- /dev/null
++++ b/safepatch_hidden/test_hidden_regression.py
+@@ -0,0 +1,17 @@
++from io import StringIO
++
++from tqdm import tqdm
++
++
++def truth_value(iterable, total):
++    stream = StringIO()
++    try:
++        with tqdm(iterable, total=total, file=stream, disable=True) as progress:
++            return bool(progress)
++    finally:
++        stream.close()
++
++
++def test_explicit_total_takes_precedence_over_iterable_truthiness():
++    assert truth_value([], total=2) is True
++    assert truth_value([1], total=0) is False

@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "id": "thefuck-19",
+  "repository": "https://github.com/nvbn/thefuck",
+  "buggy_commit": "959b96cf6ec8cedda05dc58efe0e0f3bd6ed2f4e",
+  "fixed_commit": "dc23d67a42dad54308a753639edd1ea0d15cb2e7",
+  "task_python": "3.7.17",
+  "prompt": "When a Git push is rejected as non-fast-forward, the suggested correction must use --force-with-lease instead of destructive --force.",
+  "public_test_patch": "public_test.patch",
+  "hidden_test_patch": "hidden_test.patch",
+  "hidden_test_command": [
+    "sh",
+    "-c",
+    "python -m pytest safepatch_hidden/test_hidden_regression.py::test_safe_force_preserves_complex_push_arguments -q -s --disable-warnings"
+  ],
+  "test_command": ["sh", "-c", "python -m pytest tests/rules/test_git_push_force.py::test_get_new_command -q --disable-warnings"],
+  "failure_signature": "E       AssertionError: assert 'git push --force' == 'git push --force-with-lease'"
+}

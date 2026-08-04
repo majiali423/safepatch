@@ -1,0 +1,62 @@
+exit_code: 1
+duration_sec: 0.572
+environment_error: None
+error_kind: None
+failed_tests: ['safepatch_hidden/test_hidden_regression.py::test_sanic_logger_does_not_reuse_named_root_logger']
+timeout_seconds: 120
+container_name: None
+network_mode: none
+user: 1000:1000
+
+--- stdout ---
+F
+=================================== FAILURES ===================================
+______________ test_sanic_logger_does_not_reuse_named_root_logger ______________
+
+    def test_sanic_logger_does_not_reuse_named_root_logger():
+        named_root = logging.getLogger("root")
+        sanic_root = logging.getLogger("sanic.root")
+        named_root.handlers[:] = []
+        sanic_root.handlers[:] = []
+    
+        Sanic("hidden_logging_regression")
+    
+>       assert named_root.handlers == []
+E       assert [<StreamHandl...ut> (NOTSET)>] == []
+E         Left contains one more item: <StreamHandler <stdout> (NOTSET)>
+E         Full diff:
+E         - []
+E         + [<StreamHandler <stdout> (NOTSET)>]
+
+safepatch_hidden/test_hidden_regression.py:14: AssertionError
+=========================== short test summary info ============================
+FAILED safepatch_hidden/test_hidden_regression.py::test_sanic_logger_does_not_reuse_named_root_logger
+1 failed, 36 warnings in 0.19s
+
+
+--- stderr ---
+
+
+--- traceback_summary ---
+=================================== FAILURES ===================================
+______________ test_sanic_logger_does_not_reuse_named_root_logger ______________
+
+    def test_sanic_logger_does_not_reuse_named_root_logger():
+        named_root = logging.getLogger("root")
+        sanic_root = logging.getLogger("sanic.root")
+        named_root.handlers[:] = []
+        sanic_root.handlers[:] = []
+    
+        Sanic("hidden_logging_regression")
+    
+>       assert named_root.handlers == []
+E       assert [<StreamHandl...ut> (NOTSET)>] == []
+E         Left contains one more item: <StreamHandler <stdout> (NOTSET)>
+E         Full diff:
+E         - []
+E         + [<StreamHandler <stdout> (NOTSET)>]
+
+safepatch_hidden/test_hidden_regression.py:14: AssertionError
+=========================== short test summary info ============================
+FAILED safepatch_hidden/test_hidden_regression.py::test_sanic_logger_does_not_reuse_named_root_logger
+1 failed, 36 warnings in 0.19s
