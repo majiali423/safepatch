@@ -14,7 +14,7 @@ Ship criteria for a reliability milestone:
 - README first screen includes a 30–60 second demo, architecture diagram, copy-pasteable commands, and an honest evaluation summary.
 - At least one real-repository bug result set and one preflight ablation are present.
 - All raw session results are traceable; summary reports are regenerable by script.
-- Design narrative can explain the problem, design, trade-offs, data, and limits in five minutes.
+- Architecture and failure docs explain the problem, design, trade-offs, data, and limits.
 
 ## 2. P0: Engineering trustworthiness (week 1)
 
@@ -65,9 +65,9 @@ code-agent examples\buggy_calculator `
 
 Acceptance: a new contributor can reproduce from a clean clone in about 10 minutes; the GIF is understandable without narration for the key control chain.
 
-### 2.4 Prepare the engineering narrative
+### 2.4 Document design rationale
 
-Prepare answers around these five questions instead of memorizing README modules:
+Keep short, written answers to these maintainer questions in architecture or failure docs:
 
 - Why can a model patch fail even when business logic looks correct?
 - Why separate format retry, patch regeneration, and repair attempt?
@@ -75,7 +75,7 @@ Prepare answers around these five questions instead of memorizing README modules
 - Why does human approval bind both patch hash and working-tree hash?
 - Why must hidden tests stay outside the product loop?
 
-Each answer should follow “real failure → design → cost → data”, with one failure-case trace ready.
+Prefer the structure “real failure → design → cost → data”, with at least one committed failure-case trace.
 
 ## 3. P1: Real validity evidence (week 2)
 
