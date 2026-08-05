@@ -6,6 +6,10 @@ SafePatch is a controlled code-maintenance agent for small Python
 repositories. It emphasizes human approval, restricted tools, isolated
 tests, auditable traces, and fail-closed safety boundaries.
 
+The public product name is **SafePatch**. The installable Python package and
+CLI entry point remain `code-agent` (`pyproject.toml` / `code-agent` console
+script).
+
 ## Project status
 
 - Package version: **0.3.1** (`pyproject.toml`)

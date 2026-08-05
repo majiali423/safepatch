@@ -2,7 +2,24 @@
 
 Goal: raise SafePatch from a strong self-hosted Agent prototype to a reliable code-repair system with public engineering gates, real-task evidence, and reproducible experiments.
 
-Suggested horizon: three weeks. When time is short, keep the strict P0 → P1 → P2 order and do not expand product scope before real evaluation is complete. The three-week track standardizes on Python 3.11 to reduce cross-version noise; broader version support waits until the reliability baseline is stable.
+## Current status
+
+Much of the original three-week plan is already landed on `master`. Treat the
+sections below as historical planning notes plus remaining open work, not as an
+unstarted schedule.
+
+**Done (representative):**
+- Cross-platform CI (unit matrix, product quality/wheel smoke, Docker E2E)
+- Real-bug benchmark environments, published evidence bundles, and verification scripts under `examples/real_bug_benchmark/`
+- Fail-closed approval, disposable Docker test copies, timeout container cleanup, path redaction
+- Engineering-facing README positioning (product status, safety model, evaluation caveats)
+
+**Still open:**
+- Publish an open-source license (or keep the explicit “no license” notice)
+- Fill package metadata (`urls`, authors, classifiers); decide whether the PyPI/CLI name stays `code-agent`
+- Optional maintainer polish: restore a CI badge to `majiali423/safepatch`, refresh dated audits, keep demo GIF discoverable under Demo docs
+
+Suggested horizon when the plan was written: three weeks. When time is short, keep the strict P0 → P1 → P2 order and do not expand product scope before real evaluation is complete. The original track standardized on Python 3.11 to reduce cross-version noise; the package currently supports Python 3.10+ and CI covers multiple versions.
 
 ## 1. Acceptance gates
 
