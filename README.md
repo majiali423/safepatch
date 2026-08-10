@@ -10,12 +10,16 @@ The public product name is **SafePatch**. The installable Python package and
 CLI entry point remain `code-agent` (`pyproject.toml` / `code-agent` console
 script).
 
+Reviewing this as an engineering project? Start with the
+[5-minute reviewer brief](docs/RECRUITER_BRIEF.md), then run the deterministic
+[demo](docs/DEMO.md).
+
 ## Project status
 
 - Package version: **0.3.1** (`pyproject.toml`)
 - Reliability work described in [Next Release Notes](docs/NEXT_RELEASE_NOTES.md)
   is **Unreleased** — not a published release commitment
-- No open-source license has been published for this repository
+- Licensed under MIT; see [LICENSE](LICENSE)
 - Primary target: small local Python repositories that use pytest
 - Scope remains intentionally limited; this is an engineering project, not a
   general-purpose software-engineering platform
@@ -241,8 +245,8 @@ Reports and design notes live under `examples/real_bug_benchmark/` and
 
 ```bash
 python -m pip install -e ".[dev]"
-python -m pytest -q
-python -m pytest -m docker_e2e -q
+python -m pytest -q -p no:cacheprovider --basetemp .test-artifacts
+python -m pytest -m docker_e2e -q -p no:cacheprovider --basetemp .docker-test-artifacts
 python -m ruff check code_agent tests
 python examples/llm_benchmark/verify_manifest.py
 git diff --check
@@ -287,6 +291,7 @@ docs/           Architecture, recovery, observability, roadmap notes
 | [Architecture](docs/ARCHITECTURE.md) | Modules and call chain |
 | [Reliability Roadmap](docs/RELIABILITY_ROADMAP.md) | Engineering hardening roadmap |
 | [Next Release Notes](docs/NEXT_RELEASE_NOTES.md) | Unreleased reliability work |
+| [Release Checklist](docs/RELEASE_CHECKLIST.md) | Current release-candidate gates and evidence |
 | [Session Observability](docs/SESSION_OBSERVABILITY.md) | Per-session metrics |
 | [Patch Recovery](docs/PATCH_RECOVERY.md) | Safe recovery design |
 | [Demo](docs/DEMO.md) | End-to-end demonstration |
@@ -295,5 +300,4 @@ docs/           Architecture, recovery, observability, roadmap notes
 
 ## License
 
-No open-source license has been published for this repository.
-Until that decision is made, do not assume permission beyond applicable law.
+Copyright (c) 2026 Jiali Ma. Licensed under the [MIT License](LICENSE).

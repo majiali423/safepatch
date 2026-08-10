@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,10 +8,30 @@ version = "0.3.1"
 description = "A small-Python-repo code repair agent with Docker pytest and human approval"
 readme = "README.md"
 requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+  { name = "Jiali Ma" },
+]
+keywords = ["agent", "code-repair", "llm", "pytest", "security"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+]
 dependencies = [
   "openai>=1.40.0",
   "rich>=13.7.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/majiali423/safepatch"
+Source = "https://github.com/majiali423/safepatch"
+Issues = "https://github.com/majiali423/safepatch/issues"
 
 [project.optional-dependencies]
 dev = [

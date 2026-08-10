@@ -53,7 +53,9 @@ Suggested job split:
 
 1. `unit`: Windows + Ubuntu, Python 3.11, non-Docker tests.
 2. `quality`: Ruff on `code_agent/`, build a wheel, install the wheel in a clean env, run a CLI smoke test.
-3. `docker-release`: Ubuntu-only, serial `docker_e2e`; triggered by tag, release, or manual run; does not block ordinary PRs.
+3. `docker-release`: Ubuntu-only, serial `docker_e2e`; the historical plan
+   proposed tag/release/manual triggering. The current `ci.yml` also runs this
+   gate on ordinary pushes and PRs, so it is a required CI check today.
 
 Real LLM benchmarks stay out of ordinary CI; place them in a manual release workflow so cost and sampling noise do not block commits.
 
@@ -202,6 +204,8 @@ After the milestone, if maintenance continues, split by state-transition respons
 - `SessionFinalizer`: summary, diff, trace, observability.
 
 Freeze behavioral tests before refactoring; refactor commits must not ship new features. Acceptance focus: state transitions and counter semantics stay unchanged.
+See [Controller Refactor Plan](CONTROLLER_REFACTOR_PLAN.md) for the proposed
+extraction order and invariants.
 
 ### 4.4 Observability presentation
 
