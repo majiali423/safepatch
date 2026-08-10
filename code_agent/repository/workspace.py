@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import uuid
 from dataclasses import dataclass
@@ -57,13 +58,12 @@ def import_repository(
     if not source.exists() or not source.is_dir():
         raise WorkspaceError(f"Repository path does not exist: {source}")
 
+    file_count, total_bytes = _measure_importable_tree(source)
+
     session_dir = create_session_dir(session_base)
     workspace_root = session_dir / "working_copy"
     artifacts_dir = session_dir / "artifacts"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
-
-    file_count = 0
-    total_bytes = 0
 
     def _ignore(dir_path: str, names: list[str]) -> set[str]:
         ignored: set[str] = set()
@@ -79,20 +79,23 @@ def import_repository(
 
     shutil.copytree(source, workspace_root, ignore=_ignore, symlinks=False)
 
+    # Recheck the copied tree: source files can change between preflight and copy.
+    copied_file_count = 0
+    copied_total_bytes = 0
     for path in workspace_root.rglob("*"):
         if path.is_symlink():
             # Defense in depth: drop any symlink that still appears.
             path.unlink(missing_ok=True)
             continue
         if path.is_file():
-            file_count += 1
-            total_bytes += path.stat().st_size
-            if file_count > MAX_FILES:
+            copied_file_count += 1
+            copied_total_bytes += path.stat().st_size
+            if copied_file_count > MAX_FILES:
                 shutil.rmtree(session_dir, ignore_errors=True)
                 raise WorkspaceError(
                     f"Repository exceeds max file count ({MAX_FILES})"
                 )
-            if total_bytes > MAX_TOTAL_BYTES:
+            if copied_total_bytes > MAX_TOTAL_BYTES:
                 shutil.rmtree(session_dir, ignore_errors=True)
                 raise WorkspaceError(
                     f"Repository exceeds max size ({MAX_TOTAL_BYTES} bytes)"
@@ -106,6 +109,39 @@ def import_repository(
         file_count=file_count,
         total_bytes=total_bytes,
     )
+
+
+def _measure_importable_tree(source: Path) -> tuple[int, int]:
+    """Measure the exact regular files eligible for a workspace import.
+
+    This runs before ``copytree`` so repository caps prevent an oversized source
+    from consuming session disk space. Symlinks and ignored directories follow
+    the same policy as the copy operation.
+    """
+    file_count = 0
+    total_bytes = 0
+
+    for root_text, dir_names, file_names in os.walk(source, topdown=True, followlinks=False):
+        root = Path(root_text)
+        dir_names[:] = [
+            name
+            for name in dir_names
+            if name not in IGNORE_DIR_NAMES and not (root / name).is_symlink()
+        ]
+        for name in file_names:
+            path = root / name
+            if path.is_symlink() or not path.is_file():
+                continue
+            file_count += 1
+            total_bytes += path.stat().st_size
+            if file_count > MAX_FILES:
+                raise WorkspaceError(f"Repository exceeds max file count ({MAX_FILES})")
+            if total_bytes > MAX_TOTAL_BYTES:
+                raise WorkspaceError(
+                    f"Repository exceeds max size ({MAX_TOTAL_BYTES} bytes)"
+                )
+
+    return file_count, total_bytes
 
 
 def safe_resolve(workspace_root: Path, user_path: str) -> Path:

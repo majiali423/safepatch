@@ -26,6 +26,8 @@ examples/real_bug_benchmark/results/
 
 # Caches
 .pytest_cache/
+.test-artifacts/
+.docker-test-artifacts/
 .coverage
 htmlcov/
 .mypy_cache/

@@ -4,6 +4,10 @@
 
 SafePatch 是一个面向小型 Python 仓库的受控代码维护 Agent，强调人工审批、受限工具、隔离测试、可审计轨迹和 fail-closed 安全边界。
 
+如果你正在从工程招聘角度评审本项目，建议先阅读
+[5 分钟工程评审导读](docs/RECRUITER_BRIEF.md)，再运行确定性的
+[演示](docs/DEMO.md)。
+
 公开产品名为 **SafePatch**。可安装的 Python 包与 CLI 入口仍为 `code-agent`
 （见 `pyproject.toml` / `code-agent` console script）。
 
@@ -11,7 +15,7 @@ SafePatch 是一个面向小型 Python 仓库的受控代码维护 Agent，强�
 
 - 包版本：**0.3.1**（`pyproject.toml`）
 - [下一版本说明](docs/NEXT_RELEASE_NOTES.md) 中的可靠性改造属于 **Unreleased**，不构成已发布版本承诺
-- 本仓库尚未发布开源许可证
+- 项目采用 [MIT License](LICENSE) 开源
 - 主要支持：使用 pytest 的小型本地 Python 仓库
 - 范围刻意受限；这是工程项目，不是通用软件工程平台
 
@@ -274,6 +278,4 @@ docs/           架构、恢复、可观测性、路线图说明
 
 ## 许可证
 
-No open-source license has been published for this repository.
-
-在作出许可证决定前，不应假定拥有适用法律之外的授权。
+Copyright (c) 2026 Jiali Ma。项目采用 [MIT License](LICENSE) 开源。
