@@ -88,7 +88,7 @@ The model has no Docker tool. `DockerPytestRunner` uses a fixed profile:
 - Mount of `working_copy` only
 - No host API keys in the container
 
-Build the image with `code-agent --build-image`.
+Build the image with `safepatch --build-image`.
 
 ## 8. Repair loop
 

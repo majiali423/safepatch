@@ -86,7 +86,7 @@ def _git_tag() -> str:
         return "unknown"
 
 
-def _docker_image_info(image: str = "code-agent-pytest:local") -> dict:
+def _docker_image_info(image: str = "safepatch-pytest:local") -> dict:
     proc = subprocess.run(
         ["docker", "image", "inspect", image, "--format", "{{.Id}}"],
         capture_output=True,
@@ -174,16 +174,16 @@ def _model_params_freeze() -> dict:
     Env overrides (if any) win for documentation of this run.
     """
     env_temp = os.environ.get("OPENAI_TEMPERATURE") or os.environ.get(
-        "CODE_AGENT_TEMPERATURE"
+        "SAFEPATCH_TEMPERATURE"
     )
     return {
         "temperature": env_temp if env_temp is not None else 0.1,
         "temperature_source": "env" if env_temp is not None else "product_hardcode",
         "max_tokens": os.environ.get("OPENAI_MAX_TOKENS")
-        or os.environ.get("CODE_AGENT_MAX_TOKENS")
+        or os.environ.get("SAFEPATCH_MAX_TOKENS")
         or "provider_default",
         "top_p": os.environ.get("OPENAI_TOP_P")
-        or os.environ.get("CODE_AGENT_TOP_P")
+        or os.environ.get("SAFEPATCH_TOP_P")
         or "provider_default",
         "frequency_penalty": "provider_default",
         "presence_penalty": "provider_default",
@@ -204,16 +204,16 @@ def record_freeze(task_ids: list[str]) -> dict:
         "system_prompt_sha256": hashlib.sha256(
             SYSTEM_PROMPT.encode("utf-8")
         ).hexdigest(),
-        "model": os.environ.get("CODE_AGENT_MODEL")
+        "model": os.environ.get("SAFEPATCH_MODEL")
         or os.environ.get("OPENAI_MODEL")
         or "unknown",
         "base_url": os.environ.get("OPENAI_BASE_URL")
-        or os.environ.get("CODE_AGENT_BASE_URL")
+        or os.environ.get("SAFEPATCH_BASE_URL")
         or "",
         "model_params": _model_params_freeze(),
         # Never record API keys.
         "api_key_present": bool(
-            os.environ.get("OPENAI_API_KEY") or os.environ.get("CODE_AGENT_API_KEY")
+            os.environ.get("OPENAI_API_KEY") or os.environ.get("SAFEPATCH_API_KEY")
         ),
         "docker_preflight_ok": ok,
         "docker_preflight_reason": reason,
@@ -830,7 +830,7 @@ def main() -> int:
     task_ids = [t["task_id"] for t in tasks]
 
     if not (
-        os.environ.get("OPENAI_API_KEY") or os.environ.get("CODE_AGENT_API_KEY")
+        os.environ.get("OPENAI_API_KEY") or os.environ.get("SAFEPATCH_API_KEY")
     ):
         print("ERROR: missing API key in .env", file=sys.stderr)
         return 2

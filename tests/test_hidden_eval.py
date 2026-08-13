@@ -41,7 +41,7 @@ class FakeHiddenRunner:
         return True, "ok"
 
     def _resolve_image(self):
-        return "code-agent-pytest:local"
+        return "safepatch-pytest:local"
 
     def make_run_config(self, image: str) -> DockerRunConfig:
         return DockerRunConfig(image=image)
@@ -491,7 +491,7 @@ def test_leak_prevention_end_to_end_dry_run(tmp_path: Path):
 
 
 def test_docker_config_for_hidden_reuses_security_fields():
-    cfg = DockerRunConfig(image="code-agent-pytest:local").for_hidden_tests()
+    cfg = DockerRunConfig(image="safepatch-pytest:local").for_hidden_tests()
     assert list(cfg.pytest_argv) == list(HIDDEN_PYTEST_ARGV)
     assert cfg.network_mode == "none"
     assert cfg.pids_limit == 128

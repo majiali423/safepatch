@@ -21,7 +21,7 @@
     "python",
     "-m",
     "pytest",
-    "tqdm/tests/tests_tqdm.py::test_bool",
+    "safepatch_public/test_public_regression.py::test_bool",
     "-q",
     "--disable-warnings"
   ],

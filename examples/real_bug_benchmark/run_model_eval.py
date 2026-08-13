@@ -115,7 +115,7 @@ def freeze_record(task_ids: list[str], experiment: str, model: str) -> dict[str,
     task_files = [
         path for task_id in task_ids for path in (TASKS / task_id).rglob("*") if path.is_file()
     ]
-    base_url = os.getenv("OPENAI_BASE_URL") or os.getenv("CODE_AGENT_BASE_URL") or ""
+    base_url = os.getenv("OPENAI_BASE_URL") or os.getenv("SAFEPATCH_BASE_URL") or ""
     return {
         "schema_version": 1,
         "started_at": utc_now(),
@@ -123,7 +123,7 @@ def freeze_record(task_ids: list[str], experiment: str, model: str) -> dict[str,
         "task_ids": task_ids,
         "model": model,
         "base_host": urlparse(base_url).hostname,
-        "api_key_present": bool(os.getenv("OPENAI_API_KEY") or os.getenv("CODE_AGENT_API_KEY")),
+        "api_key_present": bool(os.getenv("OPENAI_API_KEY") or os.getenv("SAFEPATCH_API_KEY")),
         "temperature": 0.1,
         "system_prompt_sha256": hashlib.sha256(SYSTEM_PROMPT.encode()).hexdigest(),
         "product_files_sha256": sha256_files(product_files),
@@ -142,7 +142,15 @@ def freeze_record(task_ids: list[str], experiment: str, model: str) -> dict[str,
 def ensure_mirror(task: dict[str, Any]) -> Path:
     cache = RESULTS / "_cache" / f"{task['id']}.git"
     if cache.exists():
-        return cache
+        check = subprocess.run(
+            ["git", "-C", str(cache), "cat-file", "-e", f"{task['buggy_commit']}^{{commit}}"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if check.returncode == 0:
+            return cache
+        shutil.rmtree(cache)
     cache.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
         ["git", "clone", "--mirror", "--quiet", task["repository"], str(cache)],
@@ -468,7 +476,7 @@ def main() -> int:
     missing = [task_id for task_id in task_ids if not (TASKS / task_id / "task.json").exists()]
     if missing:
         raise SystemExit(f"unknown task ids: {missing}")
-    model = args.model or os.getenv("CODE_AGENT_MODEL") or os.getenv("OPENAI_MODEL") or ""
+    model = args.model or os.getenv("SAFEPATCH_MODEL") or os.getenv("OPENAI_MODEL") or ""
     if not model and not args.prepare_only:
         raise SystemExit("model is not configured")
 

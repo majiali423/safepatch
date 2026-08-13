@@ -379,7 +379,7 @@ def test_provider_transport_exception_counts_model_call(tmp_path: Path):
 def test_local_config_error_before_provider_counts_zero(tmp_path: Path, monkeypatch):
     """11. Local config error before provider → all counters stay 0."""
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    monkeypatch.delenv("CODE_AGENT_API_KEY", raising=False)
+    monkeypatch.delenv("SAFEPATCH_API_KEY", raising=False)
     llm = LLMClient(api_key=None, model="no-key-model")
     llm.api_key = None
     llm._dry_run_script = []

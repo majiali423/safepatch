@@ -16,7 +16,7 @@ from pathlib import Path
 
 _IGNORE = shutil.ignore_patterns(
     ".git",
-    ".code_agent_sessions",
+    ".safepatch_sessions",
     "__pycache__",
     ".pytest_cache",
     "*.pyc",

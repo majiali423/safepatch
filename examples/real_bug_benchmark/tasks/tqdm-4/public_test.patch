@@ -1,0 +1,18 @@
+diff --git a/safepatch_public/test_public_regression.py b/safepatch_public/test_public_regression.py
+new file mode 100644
+--- /dev/null
++++ b/safepatch_public/test_public_regression.py
+@@ -0,0 +1,13 @@
++from io import StringIO
++
++from tqdm import tqdm
++
++
++def test_unknown_total_with_numeric_scale():
++    stream = StringIO()
++    try:
++        for _ in tqdm((item for item in range(10)), file=stream, unit_scale=10):
++            pass
++        assert "100it" in stream.getvalue()
++    finally:
++        stream.close()

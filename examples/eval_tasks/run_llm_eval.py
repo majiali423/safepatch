@@ -1,6 +1,6 @@
 """Run 5 real-LLM eval tasks and collect metrics.
 
-Requires OPENAI_API_KEY or CODE_AGENT_API_KEY.
+Requires OPENAI_API_KEY or SAFEPATCH_API_KEY.
 Uses product Docker Runtime (not LocalPytestRunner).
 """
 
@@ -58,7 +58,7 @@ TASKS = [
 
 
 def _has_api_key() -> bool:
-    return bool(os.environ.get("OPENAI_API_KEY") or os.environ.get("CODE_AGENT_API_KEY"))
+    return bool(os.environ.get("OPENAI_API_KEY") or os.environ.get("SAFEPATCH_API_KEY"))
 
 
 def _count_reads(trace_path: Path) -> int:
@@ -233,7 +233,7 @@ def run_one(task: dict) -> dict:
 def main() -> int:
     if not _has_api_key():
         print(
-            "ERROR: Set OPENAI_API_KEY or CODE_AGENT_API_KEY before running real LLM eval.",
+            "ERROR: Set OPENAI_API_KEY or SAFEPATCH_API_KEY before running real LLM eval.",
             file=sys.stderr,
         )
         return 2
@@ -249,7 +249,7 @@ def main() -> int:
             print(f"FAILED {task['id']}: {exc}", flush=True)
 
     report = {
-        "model": os.environ.get("CODE_AGENT_MODEL")
+        "model": os.environ.get("SAFEPATCH_MODEL")
         or os.environ.get("OPENAI_MODEL")
         or "gpt-4o-mini",
         "tasks": rows,

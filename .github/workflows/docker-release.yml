@@ -24,7 +24,7 @@ jobs:
       - name: Build local pytest image
         run: >-
           docker build
-          -t code-agent-pytest:local
+          -t safepatch-pytest:local
           -f code_agent/runtime/Dockerfile.pytest
           code_agent/runtime
       - name: Run Docker E2E tests

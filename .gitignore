@@ -13,6 +13,8 @@ venv/
 !.env.example
 
 # Agent / eval runtime artifacts (never commit)
+.safepatch_sessions/
+# Legacy local run artifacts retained outside version control.
 .code_agent_sessions/
 examples/eval_tasks/results/
 examples/eval_tasks/**/latest/

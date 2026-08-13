@@ -36,11 +36,11 @@ live model and must not be represented as a fresh capability result.
 python -m build
 python -m venv .smoke-venv
 .smoke-venv/bin/python -m pip install dist/*.whl
-.smoke-venv/bin/code-agent --help
+.smoke-venv/bin/safepatch --help
 ```
 
 On Windows, use `.smoke-venv\Scripts\python.exe` and
-`.smoke-venv\Scripts\code-agent.exe`. Confirm that the installed wheel contains
+`.smoke-venv\Scripts\safepatch.exe`. Confirm that the installed wheel contains
 `code_agent/runtime/Dockerfile.pytest`.
 
 ## 4. Docker gate
@@ -49,7 +49,7 @@ With Docker available, build the pinned local image and run the security E2E
 suite:
 
 ```bash
-python -m code_agent --build-image
+safepatch --build-image
 python -m pytest -q -m docker_e2e -p no:cacheprovider --basetemp .docker-test-artifacts
 ```
 

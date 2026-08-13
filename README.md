@@ -6,9 +6,8 @@ SafePatch is a controlled code-maintenance agent for small Python
 repositories. It emphasizes human approval, restricted tools, isolated
 tests, auditable traces, and fail-closed safety boundaries.
 
-The public product name is **SafePatch**. The installable Python package and
-CLI entry point remain `code-agent` (`pyproject.toml` / `code-agent` console
-script).
+SafePatch is the public product name, installable Python package, and CLI
+command. Install it as `safepatch` and run it with `safepatch`.
 
 Reviewing this as an engineering project? Start with the
 [5-minute reviewer brief](docs/RECRUITER_BRIEF.md), then run the deterministic
@@ -154,8 +153,8 @@ Docker is required for pytest isolation:
 
 ```bash
 docker info
-code-agent --build-image
-code-agent --docker-check
+safepatch --build-image
+safepatch --docker-check
 ```
 
 Copy `.env.example` to `.env` and set provider credentials when running a
@@ -167,7 +166,7 @@ Minimal deterministic path (no API key): uses a small demo repo and a frozen
 tool-call script.
 
 ```powershell
-code-agent examples\buggy_calculator `
+safepatch examples\buggy_calculator `
   "divide raises ZeroDivisionError on b==0; it should raise ValueError." `
   --dry-run-script examples\dry_run_fix_divide.json `
   --yes
@@ -175,7 +174,7 @@ code-agent examples\buggy_calculator `
 
 Typical live workflow:
 
-1. Point `code-agent` at a small Python + pytest repository copy
+1. Point `safepatch` at a small Python + pytest repository copy
 2. Provide a bug or change description (argument or `--description-file`)
 3. Inspect the patch proposal shown by the CLI
 4. Approve or reject at the human approval prompt (omit `--yes`)
@@ -223,6 +222,11 @@ Caution (retained as project policy):
   files alone (provider/API, sampling, and environment boundaries)
 - Irreproducibility boundaries are documented in the frozen reports
 - Single-run pass rates must not be packaged as stable product accuracy
+
+The real-bug evidence currently covers 10 environment-accepted tasks and 30
+effective model runs across two frozen batches: 26/30 hidden/overall passes.
+This is an auditable aggregate, not a controlled comparison or a general
+production-accuracy claim; see the [extension batch report](examples/real_bug_benchmark/EXTENSION_PILOT_REPORT.md).
 
 Verify committed evidence without a model account:
 
@@ -277,7 +281,7 @@ Do not commit `.env`, session directories, or `examples/llm_benchmark/results/`.
 ## Repository layout
 
 ```text
-code_agent/     Product package (controller, patching, runtime, tools, eval)
+code_agent/     Internal implementation package (controller, patching, runtime, tools, eval)
 tests/          Unit, integration, and Docker E2E tests
 examples/       Demo repos, dry-run scripts, benchmarks, frozen evidence
 docs/           Architecture, recovery, observability, roadmap notes

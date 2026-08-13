@@ -157,7 +157,7 @@ def test_success_removes_exact_test_copy_parent(
     workspace = _workspace(tmp_path)
     runner = DockerPytestRunner()
     monkeypatch.setattr(runner, "preflight", lambda: (True, "ok"))
-    monkeypatch.setattr(runner, "_resolve_image", lambda: "code-agent-pytest:local")
+    monkeypatch.setattr(runner, "_resolve_image", lambda: "safepatch-pytest:local")
 
     def fake_run(cmd: list[str], *, timeout_seconds: int):
         return "ok", "", 0
@@ -176,7 +176,7 @@ def test_pytest_failure_removes_exact_test_copy_parent(
     workspace = _workspace(tmp_path)
     runner = DockerPytestRunner()
     monkeypatch.setattr(runner, "preflight", lambda: (True, "ok"))
-    monkeypatch.setattr(runner, "_resolve_image", lambda: "code-agent-pytest:local")
+    monkeypatch.setattr(runner, "_resolve_image", lambda: "safepatch-pytest:local")
 
     def fake_run(cmd: list[str], *, timeout_seconds: int):
         return "FAILED tests/test_mod.py::test_ok", "", 1
@@ -195,7 +195,7 @@ def test_timeout_removes_exact_test_copy_parent(
     workspace = _workspace(tmp_path)
     runner = DockerPytestRunner()
     monkeypatch.setattr(runner, "preflight", lambda: (True, "ok"))
-    monkeypatch.setattr(runner, "_resolve_image", lambda: "code-agent-pytest:local")
+    monkeypatch.setattr(runner, "_resolve_image", lambda: "safepatch-pytest:local")
 
     def timeout(cmd: list[str], *, timeout_seconds: int):
         raise subprocess.TimeoutExpired(cmd, timeout_seconds)
@@ -215,7 +215,7 @@ def test_docker_cli_exception_removes_exact_test_copy_parent(
     workspace = _workspace(tmp_path)
     runner = DockerPytestRunner()
     monkeypatch.setattr(runner, "preflight", lambda: (True, "ok"))
-    monkeypatch.setattr(runner, "_resolve_image", lambda: "code-agent-pytest:local")
+    monkeypatch.setattr(runner, "_resolve_image", lambda: "safepatch-pytest:local")
 
     def boom(cmd: list[str], *, timeout_seconds: int):
         raise RuntimeError("docker cli exploded")
@@ -252,7 +252,7 @@ def test_unwritable_nested_dir_still_cleaned(tmp_path: Path, monkeypatch: pytest
         nested.rmdir()
 
     monkeypatch.setattr("code_agent.runtime.docker_pytest._docker_wipe_as_uid_1000", fake_wipe)
-    error = _remove_disposable_test_copy(parent, image="code-agent-pytest:local")
+    error = _remove_disposable_test_copy(parent, image="safepatch-pytest:local")
     assert error is None
     assert wiped == [working]
     assert not working.exists()
@@ -279,7 +279,7 @@ def test_cleanup_wipe_mounts_only_working_copy(
     monkeypatch.setattr("code_agent.runtime.docker_pytest.subprocess.run", fake_run)
     from code_agent.runtime.docker_pytest import _docker_wipe_as_uid_1000
 
-    _docker_wipe_as_uid_1000(working, image="code-agent-pytest:local")
+    _docker_wipe_as_uid_1000(working, image="safepatch-pytest:local")
 
     assert len(captured) == 1
     cmd = captured[0]
@@ -327,7 +327,7 @@ def test_remove_disposable_fallback_wipes_working_copy_only(
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     monkeypatch.setattr("code_agent.runtime.docker_pytest.subprocess.run", fake_run)
-    error = _remove_disposable_test_copy(parent, image="code-agent-pytest:local")
+    error = _remove_disposable_test_copy(parent, image="safepatch-pytest:local")
     assert error is None
     assert len(mounts) == 1
     mount = mounts[0]
@@ -346,7 +346,7 @@ def test_cleanup_failure_is_not_swallowed(
     workspace = _workspace(tmp_path)
     runner = DockerPytestRunner()
     monkeypatch.setattr(runner, "preflight", lambda: (True, "ok"))
-    monkeypatch.setattr(runner, "_resolve_image", lambda: "code-agent-pytest:local")
+    monkeypatch.setattr(runner, "_resolve_image", lambda: "safepatch-pytest:local")
     monkeypatch.setattr(
         "code_agent.runtime.docker_pytest._run_docker_cmd",
         lambda cmd, timeout_seconds: ("passed stdout", "", 0),
@@ -397,7 +397,7 @@ def test_runners_only_clean_their_own_parents(
     runner_b = DockerPytestRunner()
     for runner in (runner_a, runner_b):
         monkeypatch.setattr(runner, "preflight", lambda: (True, "ok"))
-        monkeypatch.setattr(runner, "_resolve_image", lambda: "code-agent-pytest:local")
+        monkeypatch.setattr(runner, "_resolve_image", lambda: "safepatch-pytest:local")
 
     seen: list[Path] = []
     lock = threading.Lock()
@@ -440,7 +440,7 @@ def test_formal_working_copy_unchanged_after_run(
 
     runner = DockerPytestRunner()
     monkeypatch.setattr(runner, "preflight", lambda: (True, "ok"))
-    monkeypatch.setattr(runner, "_resolve_image", lambda: "code-agent-pytest:local")
+    monkeypatch.setattr(runner, "_resolve_image", lambda: "safepatch-pytest:local")
 
     def mutate_copy(cmd: list[str], *, timeout_seconds: int):
         mount = cmd[cmd.index("-v") + 1]
@@ -495,7 +495,7 @@ def test_success_log_has_no_workspace_absolute_path(
     workspace = _workspace(tmp_path)
     runner = DockerPytestRunner()
     monkeypatch.setattr(runner, "preflight", lambda: (True, "ok"))
-    monkeypatch.setattr(runner, "_resolve_image", lambda: "code-agent-pytest:local")
+    monkeypatch.setattr(runner, "_resolve_image", lambda: "safepatch-pytest:local")
     monkeypatch.setattr(
         "code_agent.runtime.docker_pytest._run_docker_cmd",
         lambda cmd, timeout_seconds: ("ok", "", 0),
@@ -567,10 +567,10 @@ def test_cleanup_timeout_force_removes_exact_name(
         lambda name: removed.append(name),
     )
     with pytest.raises(RuntimeError, match="cleanup container timed out"):
-        _docker_wipe_as_uid_1000(working, image="code-agent-pytest:local")
+        _docker_wipe_as_uid_1000(working, image="safepatch-pytest:local")
     assert len(seen_names) == 1
     assert removed == [seen_names[0]]
-    assert seen_names[0].startswith("code-agent-cleanup-")
+    assert seen_names[0].startswith("safepatch-cleanup-")
 
 
 def test_cleanup_timeout_error_has_no_host_mount_path(
@@ -596,7 +596,7 @@ def test_cleanup_timeout_error_has_no_host_mount_path(
     monkeypatch.setattr(
         "code_agent.runtime.docker_pytest._force_remove_container", lambda _n: None
     )
-    error = _remove_disposable_test_copy(parent, image="code-agent-pytest:local")
+    error = _remove_disposable_test_copy(parent, image="safepatch-pytest:local")
     assert error is not None
     assert "cleanup container timed out" in error
     assert str(working.resolve()) not in error
@@ -613,7 +613,7 @@ def test_cleanup_timeout_recorded_on_runner_without_paths(
     workspace = _workspace(tmp_path)
     runner = DockerPytestRunner()
     monkeypatch.setattr(runner, "preflight", lambda: (True, "ok"))
-    monkeypatch.setattr(runner, "_resolve_image", lambda: "code-agent-pytest:local")
+    monkeypatch.setattr(runner, "_resolve_image", lambda: "safepatch-pytest:local")
     monkeypatch.setattr(
         "code_agent.runtime.docker_pytest._run_docker_cmd",
         lambda cmd, timeout_seconds: ("passed stdout", "", 0),
@@ -664,5 +664,5 @@ def test_successful_wipe_does_not_force_remove(
         "code_agent.runtime.docker_pytest._force_remove_container",
         lambda name: removed.append(name),
     )
-    _docker_wipe_as_uid_1000(working, image="code-agent-pytest:local")
+    _docker_wipe_as_uid_1000(working, image="safepatch-pytest:local")
     assert removed == []

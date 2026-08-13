@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "id": "black-3",
+  "repository": "https://github.com/psf/black.git",
+  "buggy_commit": "8126b4f6a9342290de4655e6a8a78cd288ce7daa",
+  "fixed_commit": "7a14a37981862ef418f3cdb4a7e2375856f97529",
+  "task_python": "3.8.20",
+  "prompt": "Black should reject a missing explicit --config path with Click's normal invalid-option exit code instead of proceeding as if the configuration existed.",
+  "public_test_patch": "public_test.patch",
+  "hidden_test_patch": "hidden_test.patch",
+  "hidden_test_command": ["python", "-m", "pytest", "safepatch_hidden/test_hidden_regression.py::test_missing_config_is_rejected_for_stdin", "-q", "--disable-warnings"],
+  "test_command": ["python", "-m", "pytest", "safepatch_public/test_public_regression.py::test_missing_config_returns_click_usage_error", "-q", "--disable-warnings"],
+  "failure_signature": "assert 1 == 2"
+}

@@ -219,7 +219,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def initial_state(args: argparse.Namespace, schedule: list[dict[str, Any]]) -> dict[str, Any]:
-    model = args.model or os.getenv("CODE_AGENT_MODEL") or os.getenv("OPENAI_MODEL")
+    model = args.model or os.getenv("SAFEPATCH_MODEL") or os.getenv("OPENAI_MODEL")
     if not model:
         model = DEFAULT_MODEL
     freeze = freeze_record(list(TASK_IDS), args.experiment, model)

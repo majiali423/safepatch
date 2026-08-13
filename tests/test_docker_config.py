@@ -5,10 +5,10 @@ from code_agent.runtime.docker_pytest import DockerPytestRunner
 
 
 def test_docker_run_config_to_dict_and_cmd_are_same_source():
-    cfg = DockerRunConfig(image="code-agent-pytest:local")
+    cfg = DockerRunConfig(image="safepatch-pytest:local")
     payload = cfg.to_dict()
     assert payload == {
-        "image": "code-agent-pytest:local",
+        "image": "safepatch-pytest:local",
         "network_mode": "none",
         "memory": "512m",
         "cpus": 1,
@@ -45,7 +45,7 @@ def test_docker_run_config_to_dict_and_cmd_are_same_source():
     assert cmd[cmd.index("--tmpfs") + 1] == "/tmp:rw,nosuid,nodev,noexec,size=64m"
     assert "--name" not in cmd
     assert cmd[-6:] == list(payload["pytest_argv"])
-    assert "code-agent-pytest:local" in cmd
+    assert "safepatch-pytest:local" in cmd
     # Must not embed secrets / env dumps.
     joined = " ".join(cmd)
     assert "OPENAI" not in joined
@@ -54,21 +54,21 @@ def test_docker_run_config_to_dict_and_cmd_are_same_source():
 
 def test_container_name_appears_in_cmd_and_to_dict():
     cfg = DockerRunConfig(
-        image="code-agent-pytest:local",
-        container_name="code-agent-test-abc123",
+        image="safepatch-pytest:local",
+        container_name="safepatch-test-abc123",
         timeout_seconds=2,
     )
     payload = cfg.to_dict()
     cmd = cfg.build_docker_cmd("/work/copy")
-    assert payload["container_name"] == "code-agent-test-abc123"
+    assert payload["container_name"] == "safepatch-test-abc123"
     assert payload["timeout_seconds"] == 2
-    assert "--name" in cmd and cmd[cmd.index("--name") + 1] == "code-agent-test-abc123"
+    assert "--name" in cmd and cmd[cmd.index("--name") + 1] == "safepatch-test-abc123"
 
 
 def test_runner_make_run_config_matches_build_cmd():
     runner = DockerPytestRunner()
-    cfg = runner.make_run_config("code-agent-pytest:local")
-    assert cfg.to_dict()["image"] == "code-agent-pytest:local"
+    cfg = runner.make_run_config("safepatch-pytest:local")
+    assert cfg.to_dict()["image"] == "safepatch-pytest:local"
     cmd = cfg.build_docker_cmd("/work/copy")
     assert cfg.image in cmd
     assert cfg.timeout_seconds == 120

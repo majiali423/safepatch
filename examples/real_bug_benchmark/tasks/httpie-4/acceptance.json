@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "task_id": "httpie-4",
+  "accepted": true,
+  "verified_at": "2026-08-13T11:22:00Z",
+  "repository": {
+    "url": "https://github.com/jakubroztocil/httpie.git",
+    "buggy_commit": "8c892edd4fe700a7ca5cc733dcb4817831d253e2",
+    "fixed_commit": "040d981f00c3f6830b2d0db3daf3c64c080e96e3",
+    "files": 59,
+    "bytes": 676758
+  },
+  "image": {
+    "tag": "safepatch-bench-httpie-4:local",
+    "digest": "sha256:641fe7059267c37392f0c1cf2414b5518ab32378440fa25d0f1a830e4e0fd019",
+    "base_digest": "sha256:b53f496ca43e5af6994f8e316cf03af31050bf7944e0e4a308ad86c001cf028b"
+  },
+  "sandbox": {"network": "none", "cpus": 1, "memory_mib": 512, "pids_limit": 128, "container_user": "agent"},
+  "buggy_result": {"exit_code": 1, "outcome": "expected_failure", "signature": "Host: example.test"},
+  "fixed_result": {"exit_code": 0, "outcome": "passed", "tests_passed": 1},
+  "hidden_result": {"buggy_exit_code": 1, "fixed_exit_code": 0, "outcome": "expected_failure_then_pass"}
+}

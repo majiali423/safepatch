@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "task_id": "black-3",
+  "accepted": true,
+  "verified_at": "2026-08-13T11:20:00Z",
+  "repository": {
+    "url": "https://github.com/psf/black.git",
+    "buggy_commit": "8126b4f6a9342290de4655e6a8a78cd288ce7daa",
+    "fixed_commit": "7a14a37981862ef418f3cdb4a7e2375856f97529",
+    "files": 142,
+    "bytes": 4968228
+  },
+  "image": {
+    "tag": "safepatch-bench-black-3:local",
+    "digest": "sha256:04331f075e4426859957d811d57f2fdf2668d03d13f03b14f2e58f60fa5a7c29",
+    "base_digest": "sha256:1d52838af602b4b5a831beb13a0e4d073280665ea7be7f69ce2382f29c5a613f"
+  },
+  "sandbox": {"network": "none", "cpus": 1, "memory_mib": 512, "pids_limit": 128, "container_user": "agent"},
+  "buggy_result": {"exit_code": 1, "outcome": "expected_failure", "signature": "assert 1 == 2"},
+  "fixed_result": {"exit_code": 0, "outcome": "passed", "tests_passed": 1},
+  "hidden_result": {"buggy_exit_code": 1, "fixed_exit_code": 0, "outcome": "expected_failure_then_pass"}
+}

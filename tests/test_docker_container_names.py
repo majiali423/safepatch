@@ -27,20 +27,20 @@ def _repo(tmp_path: Path) -> Path:
 def test_allocate_container_name_default_format_and_uniqueness() -> None:
     first = allocate_container_name(None)
     second = allocate_container_name(None)
-    assert first.startswith("code-agent-pytest-")
-    assert second.startswith("code-agent-pytest-")
+    assert first.startswith("safepatch-pytest-")
+    assert second.startswith("safepatch-pytest-")
     assert first != second
     assert len(first) <= 63
 
 
 def test_allocate_container_name_preserves_explicit_safe_name() -> None:
     """Documented behavior: Docker-safe explicit names are preserved."""
-    assert allocate_container_name("code-agent-test-abc123") == "code-agent-test-abc123"
+    assert allocate_container_name("safepatch-test-abc123") == "safepatch-test-abc123"
 
 
 def test_allocate_container_name_replaces_unsafe_explicit() -> None:
     generated = allocate_container_name("bad name with spaces")
-    assert generated.startswith("code-agent-pytest-")
+    assert generated.startswith("safepatch-pytest-")
     assert " " not in generated
 
 
@@ -50,7 +50,7 @@ def test_default_config_run_command_includes_name(
     workspace = _repo(tmp_path)
     runner = DockerPytestRunner()
     monkeypatch.setattr(runner, "preflight", lambda: (True, "ok"))
-    monkeypatch.setattr(runner, "_resolve_image", lambda: "code-agent-pytest:local")
+    monkeypatch.setattr(runner, "_resolve_image", lambda: "safepatch-pytest:local")
     seen: list[list[str]] = []
 
     def fake_run(cmd: list[str], *, timeout_seconds: int):
@@ -62,7 +62,7 @@ def test_default_config_run_command_includes_name(
     assert result.passed
     assert "--name" in seen[0]
     name = seen[0][seen[0].index("--name") + 1]
-    assert name.startswith("code-agent-pytest-")
+    assert name.startswith("safepatch-pytest-")
     assert runner.last_run_config is not None
     assert runner.last_run_config.container_name == name
     assert runner.last_run_config.container_name is not None
@@ -74,7 +74,7 @@ def test_consecutive_runs_get_different_names(
     workspace = _repo(tmp_path)
     runner = DockerPytestRunner()
     monkeypatch.setattr(runner, "preflight", lambda: (True, "ok"))
-    monkeypatch.setattr(runner, "_resolve_image", lambda: "code-agent-pytest:local")
+    monkeypatch.setattr(runner, "_resolve_image", lambda: "safepatch-pytest:local")
     names: list[str] = []
 
     def fake_run(cmd: list[str], *, timeout_seconds: int):
@@ -94,7 +94,7 @@ def test_explicit_safe_name_is_preserved_on_run(
     workspace = _repo(tmp_path)
     runner = DockerPytestRunner()
     monkeypatch.setattr(runner, "preflight", lambda: (True, "ok"))
-    monkeypatch.setattr(runner, "_resolve_image", lambda: "code-agent-pytest:local")
+    monkeypatch.setattr(runner, "_resolve_image", lambda: "safepatch-pytest:local")
     seen: list[str] = []
 
     def fake_run(cmd: list[str], *, timeout_seconds: int):
@@ -102,11 +102,11 @@ def test_explicit_safe_name_is_preserved_on_run(
         return "ok", "", 0
 
     monkeypatch.setattr("code_agent.runtime.docker_pytest._run_docker_cmd", fake_run)
-    cfg = DockerRunConfig(image="code-agent-pytest:local", container_name="code-agent-test-pinned")
+    cfg = DockerRunConfig(image="safepatch-pytest:local", container_name="safepatch-test-pinned")
     runner.run_pytest(workspace, config=cfg)
-    assert seen == ["code-agent-test-pinned"]
+    assert seen == ["safepatch-test-pinned"]
     assert runner.last_run_config is not None
-    assert runner.last_run_config.container_name == "code-agent-test-pinned"
+    assert runner.last_run_config.container_name == "safepatch-test-pinned"
 
 
 def test_timeout_cleanup_targets_allocated_name_only(
@@ -115,7 +115,7 @@ def test_timeout_cleanup_targets_allocated_name_only(
     workspace = _repo(tmp_path)
     runner = DockerPytestRunner()
     monkeypatch.setattr(runner, "preflight", lambda: (True, "ok"))
-    monkeypatch.setattr(runner, "_resolve_image", lambda: "code-agent-pytest:local")
+    monkeypatch.setattr(runner, "_resolve_image", lambda: "safepatch-pytest:local")
     removed: list[str | None] = []
 
     def timeout(cmd: list[str], *, timeout_seconds: int):
