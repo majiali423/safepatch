@@ -38,7 +38,7 @@ class DockerRunConfig:
     timeout_seconds: int = 120
     remove_container: bool = True
     # Optional name. Product default None means DockerPytestRunner allocates a
-    # unique ``code-agent-pytest-<uuid>`` name immediately before each run so
+    # unique ``safepatch-pytest-<uuid>`` name immediately before each run so
     # timeout / CLI-error paths can ``docker rm -f`` that exact container.
     # Explicit Docker-safe names are preserved; unsafe values are replaced.
     container_name: str | None = None

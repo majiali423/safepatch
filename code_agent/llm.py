@@ -161,12 +161,12 @@ class LLMClient:
         temperature: float = DEFAULT_TEMPERATURE,
         on_provider_invocation: Callable[[], None] | None = None,
     ) -> None:
-        self.model = model or os.getenv("CODE_AGENT_MODEL", "gpt-4o-mini")
+        self.model = model or os.getenv("SAFEPATCH_MODEL", "gpt-4o-mini")
         self.api_key = api_key or os.getenv("OPENAI_API_KEY") or os.getenv(
-            "CODE_AGENT_API_KEY"
+            "SAFEPATCH_API_KEY"
         )
         self.base_url = base_url or os.getenv("OPENAI_BASE_URL") or os.getenv(
-            "CODE_AGENT_BASE_URL"
+            "SAFEPATCH_BASE_URL"
         )
         self.temperature = temperature
         self._dry_run_script = list(dry_run_script or [])

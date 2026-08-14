@@ -1,0 +1,17 @@
+diff --git a/safepatch_hidden/test_hidden_regression.py b/safepatch_hidden/test_hidden_regression.py
+new file mode 100644
+--- /dev/null
++++ b/safepatch_hidden/test_hidden_regression.py
+@@ -0,0 +1,12 @@
++from click.testing import CliRunner
++
++import black
++
++
++def test_missing_config_is_rejected_for_stdin(tmp_path):
++    missing_config = tmp_path / "does-not-exist.toml"
++
++    result = CliRunner().invoke(black.main, ["--config", str(missing_config), "-"])
++
++    assert result.exit_code == 2
++    assert "Invalid value for '--config'" in result.output

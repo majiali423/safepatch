@@ -69,7 +69,7 @@ jobs:
           assert (files('code_agent.runtime') / 'Dockerfile.pytest').is_file()"
       - name: Run installed CLI smoke test
         working-directory: .smoke-work
-        run: ../.smoke-venv/bin/code-agent --help
+        run: ../.smoke-venv/bin/safepatch --help
 
   docker-e2e:
     name: Docker E2E
@@ -83,7 +83,7 @@ jobs:
       - name: Install development dependencies
         run: python -m pip install -e ".[dev]"
       - name: Build pinned pytest image
-        run: python -m code_agent --build-image
+        run: safepatch --build-image
       - name: Run Docker E2E tests
         run: >-
           python -m pytest -q -m docker_e2e

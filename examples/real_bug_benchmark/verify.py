@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -69,6 +71,26 @@ def apply_patch(repository: Path, patch: Path) -> None:
     )
 
 
+def patch_adds_only_new_files(patch: Path) -> bool:
+    """Whether a public test overlay must also be added to the fixed checkout."""
+    text = patch.read_text(encoding="utf-8")
+    return "new file mode" in text and "--- /dev/null" in text
+
+
+def clone_repository(repository: str, destination: Path, *, attempts: int = 3) -> None:
+    """Clone a benchmark source with bounded retries for transient HTTPS failures."""
+    for attempt in range(1, attempts + 1):
+        try:
+            run(["git", "clone", "--quiet", repository, str(destination)])
+            return
+        except subprocess.CalledProcessError:
+            if destination.exists():
+                shutil.rmtree(destination)
+            if attempt == attempts:
+                raise
+            time.sleep(attempt)
+
+
 def verify(task_dir: Path, *, skip_build: bool) -> dict[str, Any]:
     task = load_json(task_dir / "task.json")
     acceptance_path = task_dir / "acceptance.json"
@@ -95,7 +117,7 @@ def verify(task_dir: Path, *, skip_build: bool) -> dict[str, Any]:
         temp = Path(raw)
         buggy = temp / "buggy"
         fixed = temp / "fixed"
-        run(["git", "clone", "--quiet", task["repository"], str(buggy)])
+        clone_repository(task["repository"], buggy)
         run(["git", "checkout", "--quiet", task["buggy_commit"]], cwd=buggy)
         run(
             [
@@ -109,7 +131,10 @@ def verify(task_dir: Path, *, skip_build: bool) -> dict[str, Any]:
             ],
             cwd=buggy,
         )
-        apply_patch(buggy, task_dir / task["public_test_patch"])
+        public_patch = task_dir / task["public_test_patch"]
+        apply_patch(buggy, public_patch)
+        if patch_adds_only_new_files(public_patch):
+            apply_patch(fixed, public_patch)
 
         hidden_patch = task.get("hidden_test_patch")
         if hidden_patch:

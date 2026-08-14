@@ -8,8 +8,8 @@ SafePatch 是一个面向小型 Python 仓库的受控代码维护 Agent，强�
 [5 分钟工程评审导读](docs/RECRUITER_BRIEF.md)，再运行确定性的
 [演示](docs/DEMO.md)。
 
-公开产品名为 **SafePatch**。可安装的 Python 包与 CLI 入口仍为 `code-agent`
-（见 `pyproject.toml` / `code-agent` console script）。
+**SafePatch** 同时是公开产品名、可安装的 Python 包名和 CLI 命令。使用
+`safepatch` 安装并通过 `safepatch` 运行。
 
 ## 项目状态
 
@@ -141,8 +141,8 @@ pytest 隔离需要 Docker：
 
 ```bash
 docker info
-code-agent --build-image
-code-agent --docker-check
+safepatch --build-image
+safepatch --docker-check
 ```
 
 运行真实模型时，将 `.env.example` 复制为 `.env` 并配置凭证（dry-run 演示不需要）。
@@ -152,7 +152,7 @@ code-agent --docker-check
 最小确定性路径（无需 API Key）：使用小型演示仓库与冻结工具调用脚本。
 
 ```powershell
-code-agent examples\buggy_calculator `
+safepatch examples\buggy_calculator `
   "divide raises ZeroDivisionError on b==0; it should raise ValueError." `
   --dry-run-script examples\dry_run_fix_divide.json `
   --yes
@@ -160,7 +160,7 @@ code-agent examples\buggy_calculator `
 
 典型真实流程：
 
-1. 将 `code-agent` 指向一个小型 Python + pytest 仓库副本
+1. 将 `safepatch` 指向一个小型 Python + pytest 仓库副本
 2. 提供缺陷或变更描述（参数或 `--description-file`）
 3. 查看 CLI 展示的补丁提案
 4. 在人工审批提示处批准或拒绝（不要使用 `--yes` 时）
@@ -203,6 +203,10 @@ code-agent examples\buggy_calculator `
 - 历史模型结果未必能仅凭仓库文件完全复算（provider/API、采样与环境边界）
 - 不可复现边界已在冻结报告中标注
 - 不得把单次通过率包装成稳定产品准确率
+
+当前真实 Bug 证据覆盖 10 个已完成环境验收的任务、两个冻结批次中的 30 次有效模型运行，
+其中 hidden/overall 通过 26/30。这是可审计的跨批次汇总，不是受控对比或通用生产准确率声明；
+详见[扩展批次报告](examples/real_bug_benchmark/EXTENSION_PILOT_REPORT.md)。
 
 无需模型账号即可核验已提交证据：
 
@@ -256,7 +260,7 @@ python -m build
 ## 仓库结构
 
 ```text
-code_agent/     产品包（controller、patching、runtime、tools、eval）
+code_agent/     内部实现包（controller、patching、runtime、tools、eval）
 tests/          单元、集成与 Docker E2E 测试
 examples/       演示仓库、dry-run 脚本、benchmark 与冻结证据
 docs/           架构、恢复、可观测性、路线图说明

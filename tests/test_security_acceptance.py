@@ -205,7 +205,7 @@ def test_docker_unavailable_returns_environment_error(monkeypatch, tmp_path: Pat
 def test_pytest_timeout_returns_timeout_kind(monkeypatch, tmp_path: Path):
     runner = DockerPytestRunner()
     monkeypatch.setattr(runner, "preflight", lambda: (True, "ok"))
-    monkeypatch.setattr(runner, "_resolve_image", lambda: "code-agent-pytest:local")
+    monkeypatch.setattr(runner, "_resolve_image", lambda: "safepatch-pytest:local")
 
     class FakeProc:
         def communicate(self, timeout=None):

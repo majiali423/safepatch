@@ -1,8 +1,10 @@
 # Real-bug benchmark design
 
-Status: **seven environments accepted, including two natural multi-file tasks,
-with hidden gates on the original five**. A candidate is not counted as runnable or
-scored until its buggy and fixed revisions pass the environment acceptance gate.
+Status: **ten environments accepted, including two natural multi-file tasks and
+three extension tasks**. The extension tasks have passed environment and hidden
+gates and have a separately reported 9-run model batch. A candidate is not
+counted as runnable or scored until its buggy and fixed revisions pass the
+environment acceptance gate.
 
 ## Goal
 
@@ -93,7 +95,9 @@ not be added to the product image.
 | primary | `thefuck-19` | thefuck | unsafe force-push suggestion | accepted |
 | multi-file | `tornado-10` | Tornado | deferred WebSocket cycle cleanup across handler layers | accepted |
 | multi-file | `thefuck-16` | thefuck | alias variable scoping across shell adapters | accepted |
-| reserve | `tqdm-4` | tqdm | scaling with unknown total | exact revision recheck required |
+| extension batch | `black-3` | Black | missing explicit config | accepted; 3/3 model runs passed |
+| extension batch | `httpie-4` | HTTPie | case-insensitive Host header | accepted; 3/3 model runs passed |
+| extension batch | `tqdm-4` | tqdm | scaling with unknown total | accepted; 3/3 effective model runs passed |
 | reserve | `tqdm-8` | tqdm | wrong user bar variables | exact revision recheck required |
 
 Measured exclusions include `youtube-dl-2` and `fastapi-5`, both of which

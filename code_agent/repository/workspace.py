@@ -42,7 +42,7 @@ class ImportedWorkspace:
 
 
 def create_session_dir(base_dir: Path | None = None) -> Path:
-    root = Path(base_dir or Path.cwd() / ".code_agent_sessions")
+    root = Path(base_dir or Path.cwd() / ".safepatch_sessions")
     root.mkdir(parents=True, exist_ok=True)
     session_id = uuid.uuid4().hex[:12]
     session_dir = root / session_id

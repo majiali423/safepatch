@@ -1,0 +1,27 @@
+diff --git a/safepatch_public/test_public_regression.py b/safepatch_public/test_public_regression.py
+new file mode 100644
+--- /dev/null
++++ b/safepatch_public/test_public_regression.py
+@@ -0,0 +1,16 @@
++from pathlib import Path
++
++from click.testing import CliRunner
++
++import black
++
++
++def test_missing_config_returns_click_usage_error(tmp_path):
++    source = tmp_path / "sample.py"
++    source.write_text("x=1\n", encoding="utf-8")
++    missing_config = tmp_path / "missing.toml"
++
++    result = CliRunner().invoke(black.main, ["--config", str(missing_config), str(source)])
++
++    assert result.exit_code == 2
++    assert "Invalid value for '--config'" in result.output
+diff --git a/_black_version.py b/_black_version.py
+new file mode 100644
+--- /dev/null
++++ b/_black_version.py
+@@ -0,0 +1 @@
++version = "0.0.0-benchmark"

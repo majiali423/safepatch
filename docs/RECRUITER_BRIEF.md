@@ -39,19 +39,22 @@ defaults to rejecting modifications to existing tests.
 | [Architecture](ARCHITECTURE.md) | Module boundaries, state transitions, and trade-offs |
 | `tests/` | Patch-path safety, approval binding, rollback, test integrity, hidden-eval isolation, and runtime cleanup |
 | [Release Checklist](RELEASE_CHECKLIST.md) | Reproducible gates for a specific candidate commit |
-| `examples/real_bug_benchmark/` | Frozen BugsInPy-derived task protocol and auditable historical runs |
+| `examples/real_bug_benchmark/` | Frozen BugsInPy-derived task protocol and auditable model-evaluation reports |
 | `examples/llm_benchmark/` | Separate micro-benchmark and replay evidence |
 
-The current deterministic suite contains 256 collected tests. On this review
-working tree it completed as **242 passed, 14 skipped**; skipped cases require
+The current deterministic suite contains 259 collected tests. On this review
+working tree it completed as **245 passed, 14 skipped**; skipped cases require
 Docker or host capabilities not available in the execution environment.
 
-The published real-bug evidence is a small historical experiment: 17 of 21
-frozen runs passed both public and hidden checks. It is useful engineering
-evidence, not a claim of general production accuracy. The separate preflight
-comparison observed 11/14 versus 9/14 final successes, but no naturally
-occurring preflight rejection, so it is explicitly not presented as causal
-proof.
+Real-bug evidence spans two frozen batches: the historical 7-task batch had
+17/21 hidden/overall passes, and the later 3-task extension batch had 9/9.
+The descriptive aggregate is **26/30 (86.7%)** hidden/overall passes across
+10 environment-accepted tasks. It is useful engineering evidence, not a claim
+of general production accuracy or a controlled version-to-version comparison;
+see [Extension Pilot Report](../examples/real_bug_benchmark/EXTENSION_PILOT_REPORT.md).
+The separate preflight comparison observed 11/14 versus 9/14 final successes,
+but no naturally occurring preflight rejection, so it is explicitly not
+presented as causal proof.
 
 ## Suggested review route
 

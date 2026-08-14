@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "task_id": "tqdm-4",
+  "accepted": true,
+  "verified_at": "2026-08-13T11:24:00Z",
+  "repository": {
+    "url": "https://github.com/tqdm/tqdm.git",
+    "buggy_commit": "03b347646492131d889871939b40457d29147216",
+    "fixed_commit": "964dee631d0ed30e2f799b42fc58ba5e73795a08",
+    "files": 59,
+    "bytes": 1158413
+  },
+  "image": {
+    "tag": "safepatch-bench-tqdm-4:local",
+    "digest": "sha256:59e8542f625cdd2c65a2d226e0967dd3f52b16a11370458ef3085b28c5f90a0c",
+    "base_digest": "sha256:2cfebc27956e6a55f78606864d91fe527696f9e32a724e6f9702b5f9602d0474"
+  },
+  "sandbox": {"network": "none", "cpus": 1, "memory_mib": 512, "pids_limit": 128, "container_user": "agent"},
+  "buggy_result": {"exit_code": 1, "outcome": "expected_failure", "signature": "TypeError: unsupported operand type(s) for *=: 'NoneType' and 'int'"},
+  "fixed_result": {"exit_code": 0, "outcome": "passed", "tests_passed": 1},
+  "hidden_result": {"buggy_exit_code": 1, "fixed_exit_code": 0, "outcome": "expected_failure_then_pass"}
+}

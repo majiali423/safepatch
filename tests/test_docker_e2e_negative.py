@@ -1,6 +1,6 @@
 """Stage D / P3: real Docker negative E2E (serial, marker=docker_e2e).
 
-Requires Docker daemon + code-agent-pytest:local. No host-pytest fallback.
+Requires Docker daemon + safepatch-pytest:local. No host-pytest fallback.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from code_agent.runtime.docker_pytest import DockerPytestRunner, _sanitized_subp
 
 
 def _unique_name() -> str:
-    return f"code-agent-test-{uuid.uuid4().hex[:12]}"
+    return f"safepatch-test-{uuid.uuid4().hex[:12]}"
 
 
 def _require_docker() -> DockerPytestRunner:
@@ -75,16 +75,16 @@ def _evidence(path: Path, payload: dict) -> None:
 
 
 def test_product_default_timeout_still_120():
-    cfg = DockerRunConfig(image="code-agent-pytest:local")
+    cfg = DockerRunConfig(image="safepatch-pytest:local")
     assert cfg.timeout_seconds == 120
     runner = DockerPytestRunner()
-    assert runner.make_run_config("code-agent-pytest:local").timeout_seconds == 120
+    assert runner.make_run_config("safepatch-pytest:local").timeout_seconds == 120
 
 
 def test_docker_run_config_is_single_source_for_e2e_cmd():
     name = _unique_name()
     cfg = DockerRunConfig(
-        image="code-agent-pytest:local",
+        image="safepatch-pytest:local",
         timeout_seconds=2,
         container_name=name,
     )
@@ -255,7 +255,7 @@ def test_never_finishes():
     assert result.duration_sec >= 1.5
     assert runner.last_run_config is not None
     name = runner.last_run_config.container_name
-    assert name and name.startswith("code-agent-pytest-")
+    assert name and name.startswith("safepatch-pytest-")
     log_text = log_path.read_text(encoding="utf-8")
     assert "timeout_seconds: 2" in log_text
     assert "TEST_TIMEOUT" in log_text
@@ -347,7 +347,7 @@ def test_container_removed_after_timeout(tmp_path: Path):
     assert result.error_kind == "timeout"
     assert runner.last_run_config is not None
     name = runner.last_run_config.container_name
-    assert name and name.startswith("code-agent-pytest-")
+    assert name and name.startswith("safepatch-pytest-")
     # Allow brief daemon settle, then confirm absence.
     time.sleep(0.5)
     inspect = subprocess.run(

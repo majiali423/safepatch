@@ -15,7 +15,7 @@ from code_agent.runtime.docker_config import DockerRunConfig
 from code_agent.state import TestResult
 
 DOCKER_IMAGE = "python:3.12-slim"
-LOCAL_PYTEST_IMAGE = "code-agent-pytest:local"
+LOCAL_PYTEST_IMAGE = "safepatch-pytest:local"
 
 FAILED_TEST_RE = re.compile(
     r"^(FAILED|ERROR)\s+(\S+?)(?:\s+-|$)",
@@ -23,7 +23,7 @@ FAILED_TEST_RE = re.compile(
 )
 # Docker allows [a-zA-Z0-9][a-zA-Z0-9_.-]*; keep well under the usual 63-char cap.
 _CONTAINER_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$")
-_CONTAINER_NAME_PREFIX = "code-agent-pytest-"
+_CONTAINER_NAME_PREFIX = "safepatch-pytest-"
 
 # Fixed wipe program for UID-1000-owned leftovers. Not user/model-controlled shell.
 _DOCKER_WIPE_PY = (
@@ -78,7 +78,7 @@ class DockerPytestRunner:
 
         image = self._resolve_image()
         if image is None:
-            return False, "pytest image missing; run: code-agent --build-image"
+            return False, "pytest image missing; run: safepatch --build-image"
         return True, f"docker ok; image={image}"
 
     def available(self) -> tuple[bool, str]:
@@ -278,7 +278,7 @@ def _run_docker_cmd(
 def allocate_container_name(explicit: str | None = None) -> str:
     """Allocate a Docker-safe container name for one ``run_pytest`` invocation.
 
-    - ``None`` / empty / unsafe → ``code-agent-pytest-<uuid>`` (product default).
+    - ``None`` / empty / unsafe → ``safepatch-pytest-<uuid>`` (product default).
     - Explicit names that already match Docker naming rules are preserved so
       audits and tests can pin a known name; they are never taken from model input.
     """
@@ -414,7 +414,7 @@ def _docker_wipe_as_uid_1000(test_copy: Path, *, image: str) -> None:
     """Clear contents of disposable ``working_copy`` as UID 1000; never delete mount root."""
     if not test_copy.exists():
         return
-    name = f"code-agent-cleanup-{uuid.uuid4().hex}"
+    name = f"safepatch-cleanup-{uuid.uuid4().hex}"
     host = str(test_copy.resolve())
     parent = test_copy.parent
     cmd = [

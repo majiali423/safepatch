@@ -163,7 +163,7 @@ def test_docker_runner_uses_and_removes_writable_test_copy(
     original = (workspace / "mod.py").read_bytes()
     runner = DockerPytestRunner()
     monkeypatch.setattr(runner, "preflight", lambda: (True, "ok"))
-    monkeypatch.setattr(runner, "_resolve_image", lambda: "code-agent-pytest:local")
+    monkeypatch.setattr(runner, "_resolve_image", lambda: "safepatch-pytest:local")
     observed: dict[str, Path] = {}
 
     def fake_run(cmd: list[str], *, timeout_seconds: int):
@@ -189,7 +189,7 @@ def test_docker_timeout_removes_test_copy(tmp_path: Path, monkeypatch: pytest.Mo
     workspace = _repo(tmp_path)
     runner = DockerPytestRunner()
     monkeypatch.setattr(runner, "preflight", lambda: (True, "ok"))
-    monkeypatch.setattr(runner, "_resolve_image", lambda: "code-agent-pytest:local")
+    monkeypatch.setattr(runner, "_resolve_image", lambda: "safepatch-pytest:local")
     observed: dict[str, Path] = {}
 
     def timeout(cmd: list[str], *, timeout_seconds: int):

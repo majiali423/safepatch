@@ -133,7 +133,7 @@ def run_hidden_tests(
         eval_temp,
         ignore=shutil.ignore_patterns(
             ".git",
-            ".code_agent_sessions",
+            ".safepatch_sessions",
             "__pycache__",
             ".pytest_cache",
             "*.pyc",
@@ -160,7 +160,7 @@ def run_hidden_tests(
     if hasattr(runner, "run_pytest") and hasattr(runner, "make_run_config"):
         resolve = getattr(runner, "_resolve_image", None)
         resolved = resolve() if callable(resolve) else None
-        image_name = resolved or getattr(runner, "image", "code-agent-pytest:local")
+        image_name = resolved or getattr(runner, "image", "safepatch-pytest:local")
         base_cfg = runner.make_run_config(image_name)
         hidden_cfg = base_cfg.for_hidden_tests()
         image = hidden_cfg.image

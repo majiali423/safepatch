@@ -16,7 +16,8 @@ unstarted schedule.
 
 **Still open:**
 - Publish an open-source license (or keep the explicit “no license” notice)
-- Fill package metadata (`urls`, authors, classifiers); decide whether the PyPI/CLI name stays `code-agent`
+- Fill package metadata (`urls`, authors, classifiers) and keep the package and CLI
+  name aligned with SafePatch.
 - Optional maintainer polish: restore a CI badge to `majiali423/safepatch`, refresh dated audits, keep demo GIF discoverable under Demo docs
 
 Suggested horizon when the plan was written: three weeks. When time is short, keep the strict P0 → P1 → P2 order and do not expand product scope before real evaluation is complete. The original track standardized on Python 3.11 to reduce cross-version noise; the package currently supports Python 3.10+ and CI covers multiple versions.
@@ -76,7 +77,7 @@ Keep the existing dry-run demo as the deterministic path, then add one real-mode
 README first screen keeps one primary command:
 
 ```powershell
-code-agent examples\buggy_calculator `
+safepatch examples\buggy_calculator `
   "divide should raise ValueError when b is zero" `
   --dry-run-script examples\dry_run_fix_divide.json `
   --yes

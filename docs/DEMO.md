@@ -12,15 +12,15 @@ when `b == 0`, but the tests require `ValueError`.
 
 ```powershell
 cd <repo-root>
-code-agent --docker-check
+safepatch --docker-check
 ```
 
-Expected: `OK: docker ok; image=code-agent-pytest:local`
+Expected: `OK: docker ok; image=safepatch-pytest:local`
 
 If the image is missing:
 
 ```powershell
-code-agent --build-image
+safepatch --build-image
 ```
 
 ## Demo repository
@@ -42,7 +42,7 @@ Inspect the bug:
 Stable and suitable for documentation or CI-less local demos:
 
 ```powershell
-code-agent examples\buggy_calculator `
+safepatch examples\buggy_calculator `
   "divide raises ZeroDivisionError on b==0; it should raise ValueError." `
   --dry-run-script examples\dry_run_fix_divide.json `
   --yes
@@ -66,7 +66,7 @@ practice interactive `approve` / `reject`.
 ## Live model run (optional)
 
 Configure `.env` from `.env.example` (`OPENAI_API_KEY`,
-`OPENAI_BASE_URL`, `CODE_AGENT_MODEL`), then omit `--dry-run-script`.
+`OPENAI_BASE_URL`, `SAFEPATCH_MODEL`), then omit `--dry-run-script`.
 
 Live runs depend on model sampling and network availability; dry-run is
 preferred when the goal is a reproducible demonstration of the control

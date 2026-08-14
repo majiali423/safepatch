@@ -1,12 +1,15 @@
 import json
 import re
+import subprocess
 from pathlib import Path
 
 from examples.real_bug_benchmark.run_model_eval import (
     TaskImageRunner,
+    ensure_mirror,
     estimate_cost,
     pricing_for_model,
 )
+from examples.real_bug_benchmark.verify import patch_adds_only_new_files
 
 BENCHMARK_ROOT = Path(__file__).parents[1] / "examples" / "real_bug_benchmark"
 
@@ -59,7 +62,9 @@ def test_accepted_benchmark_tasks_have_auditable_assets():
 
         public_test = (task_dir / task["public_test_patch"]).read_text(encoding="utf-8")
         assert public_test.startswith("diff --git ")
-        assert candidate["upstream_test"].split("::")[-1].split(".")[-1] in public_test
+        assert "safepatch_public/test_public_regression.py" in public_test or (
+            candidate["upstream_test"].split("::")[-1].split(".")[-1] in public_test
+        )
 
         hidden_test = (task_dir / task["hidden_test_patch"]).read_text(encoding="utf-8")
         assert hidden_test.startswith("diff --git ")
@@ -123,6 +128,14 @@ def test_hidden_patch_is_applied_inside_non_git_workspace(tmp_path):
     assert not (tmp_path / "safepatch_hidden" / "check.txt").exists()
 
 
+def test_new_file_public_overlay_is_added_to_both_revisions():
+    tqdm_public_patch = BENCHMARK_ROOT / "tasks" / "tqdm-3" / "public_test.patch"
+    sanic_public_patch = BENCHMARK_ROOT / "tasks" / "sanic-5" / "public_test.patch"
+
+    assert patch_adds_only_new_files(tqdm_public_patch) is True
+    assert patch_adds_only_new_files(sanic_public_patch) is False
+
+
 def test_multifile_candidates_are_natural_frozen_and_environment_accepted():
     manifest = load_json(BENCHMARK_ROOT / "candidate_manifest.json")
     candidates = manifest["multifile_candidates"]
@@ -153,3 +166,52 @@ def test_multifile_candidates_are_natural_frozen_and_environment_accepted():
         hidden_test = (task_dir / task["hidden_test_patch"]).read_text(encoding="utf-8")
         assert "safepatch_hidden/test_hidden_regression.py" in hidden_test
         assert task["hidden_test_command"]
+
+
+def test_extension_pilot_tasks_are_environment_accepted_but_unscored():
+    manifest = load_json(BENCHMARK_ROOT / "candidate_manifest.json")
+    candidates = manifest["extension_pilot_candidates"]
+
+    assert {candidate["id"] for candidate in candidates} == {
+        "black-3",
+        "httpie-4",
+        "tqdm-4",
+    }
+    for candidate in candidates:
+        task_dir = BENCHMARK_ROOT / "tasks" / candidate["id"]
+        task = load_json(task_dir / "task.json")
+        acceptance = load_json(BENCHMARK_ROOT / candidate["acceptance_file"])
+
+        assert candidate["status"] == "accepted_environment_and_extension_model_score"
+        assert candidate["hidden_test_status"] == "accepted"
+        assert acceptance["accepted"] is True
+        assert acceptance["task_id"] == task["id"] == candidate["id"]
+        assert task["buggy_commit"] == acceptance["repository"]["buggy_commit"]
+        assert task["fixed_commit"] == acceptance["repository"]["fixed_commit"]
+        assert acceptance["hidden_result"]["outcome"] == "expected_failure_then_pass"
+        assert (task_dir / task["public_test_patch"]).is_file()
+        assert (task_dir / task["hidden_test_patch"]).is_file()
+
+
+def test_empty_or_incomplete_mirror_is_recreated(tmp_path, monkeypatch):
+    import examples.real_bug_benchmark.run_model_eval as model_eval
+
+    cache = tmp_path / "_cache" / "black-3.git"
+    cache.mkdir(parents=True)
+    monkeypatch.setattr(model_eval, "RESULTS", tmp_path)
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        if "cat-file" in command:
+            return subprocess.CompletedProcess(command, 1)
+        cache.mkdir(parents=True, exist_ok=True)
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(model_eval.subprocess, "run", fake_run)
+
+    result = ensure_mirror({"id": "black-3", "repository": "https://example.invalid/black", "buggy_commit": "abc"})
+
+    assert result == cache
+    assert any("cat-file" in command for command in calls)
+    assert any(command[:3] == ["git", "clone", "--mirror"] for command in calls)

@@ -1,0 +1,20 @@
+diff --git a/safepatch_hidden/test_hidden_regression.py b/safepatch_hidden/test_hidden_regression.py
+new file mode 100644
+--- /dev/null
++++ b/safepatch_hidden/test_hidden_regression.py
+@@ -0,0 +1,15 @@
++from requests import Request
++
++from httpie.models import HTTPRequest
++
++
++def host_lines(rendered):
++    return [line for line in rendered.splitlines() if line.lower().startswith("host:")]
++
++
++def test_mixed_case_host_is_not_duplicated():
++    request = Request("GET", "http://example.test/path", headers={"hOsT": "mixed.example"}).prepare()
++
++    rendered = HTTPRequest(request).headers
++
++    assert host_lines(rendered) == ["hOsT: mixed.example"]

@@ -36,7 +36,7 @@ BOLD = _font(
 )
 
 COMMAND = [
-    "$ code-agent examples/buggy_calculator",
+    "$ safepatch examples/buggy_calculator",
     '> "divide should raise ValueError when b is zero"',
     "> --dry-run-script examples/dry_run_fix_divide.json --yes",
 ]

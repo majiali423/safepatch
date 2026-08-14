@@ -20,7 +20,7 @@ console = Console()
 def main(argv: list[str] | None = None) -> int:
     load_dotenv()
     parser = argparse.ArgumentParser(
-        prog="code-agent",
+        prog="safepatch",
         description="Repair a small local Python repo with Docker pytest and human approval.",
     )
     parser.add_argument(
@@ -46,12 +46,12 @@ def main(argv: list[str] | None = None) -> int:
         "--session-base",
         type=Path,
         default=None,
-        help="Directory for temporary sessions (default: ./.code_agent_sessions)",
+        help="Directory for temporary sessions (default: ./.safepatch_sessions)",
     )
     parser.add_argument(
         "--model",
         default=None,
-        help="LLM model name (or CODE_AGENT_MODEL)",
+        help="LLM model name (or SAFEPATCH_MODEL)",
     )
     parser.add_argument(
         "--yes",
@@ -75,7 +75,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--build-image",
         action="store_true",
-        help="Build local Docker image code-agent-pytest:local and exit",
+        help="Build local Docker image safepatch-pytest:local and exit",
     )
     parser.add_argument(
         "--docker-check",
@@ -107,8 +107,8 @@ def main(argv: list[str] | None = None) -> int:
     if not ok:
         console.print(f"[red]TEST_ENVIRONMENT_ERROR[/red]: {reason}")
         console.print(
-            "Start Docker Desktop, then run: [bold]code-agent --build-image[/bold] "
-            "and [bold]code-agent --docker-check[/bold]"
+            "Start Docker Desktop, then run: [bold]safepatch --build-image[/bold] "
+            "and [bold]safepatch --docker-check[/bold]"
         )
         return 4
 
@@ -141,7 +141,7 @@ def main(argv: list[str] | None = None) -> int:
 
     console.print(
         Panel.fit(
-            f"[bold]code-agent[/bold]\nrepo: {args.repo}\n{description}",
+            f"[bold]SafePatch[/bold]\nrepo: {args.repo}\n{description}",
             title="session",
         )
     )
@@ -255,7 +255,7 @@ def _build_image() -> int:
         "docker",
         "build",
         "-t",
-        "code-agent-pytest:local",
+        "safepatch-pytest:local",
         "-f",
         str(dockerfile),
         str(dockerfile.parent),
@@ -265,7 +265,7 @@ def _build_image() -> int:
     if proc.returncode != 0:
         console.print("[red]ERROR[/red]: docker build failed")
         return proc.returncode
-    console.print("[green]Built[/green] code-agent-pytest:local")
+    console.print("[green]Built[/green] safepatch-pytest:local")
     return 0
 
 
