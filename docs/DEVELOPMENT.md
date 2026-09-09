@@ -46,6 +46,10 @@ python -m build
 
 CI runs Linux/Python 3.10 and 3.12, Windows/Python 3.12, type/lint checks,
 published-evidence verification, packaging and real Docker tests.
+Each pull request runs one CI workflow; pushes to `master` and manual dispatches
+also run it. A new commit cancels the older run for the same PR or branch.
+Failed unit jobs retain synthetic replay captures for seven days as GitHub
+Actions artifacts, and replay comparison reports the first differing event.
 
 ## Session replay
 

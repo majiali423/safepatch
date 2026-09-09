@@ -97,15 +97,13 @@ def _evidence(start: int, end: int) -> dict[str, object]:
     }
 
 
-def _replacements(tmp: Path, session: TaskSession) -> list[tuple[str, str]]:
-    known = {
-        str(tmp.resolve()): "<CAPTURE_ROOT>",
-        str(session.session_dir.resolve()): "<SESSION_DIR>",
-        str(session.workspace_root.resolve()): "<WORKSPACE>",
-        str(session.artifacts_dir.resolve()): "<ARTIFACTS>",
-        str(session.source_repo.resolve()): "<SOURCE_REPO>",
-        session.session_id: "<SESSION>",
-    }
+def _capture_replacements(paths: dict[Path, str], session_id: str) -> list[tuple[str, str]]:
+    # Windows TEMP can contain an 8.3 alias (RUNNER~1). The trace may use
+    # either that spelling or the resolved long path, so declare both.
+    known = {session_id: "<SESSION>"}
+    for path, token in paths.items():
+        known[str(path)] = token
+        known[str(path.resolve())] = token
     return path_replacements(known)
 
 
@@ -124,7 +122,16 @@ def _write_session(dest: Path, tmp: Path, session: TaskSession) -> dict[str, obj
         final_diff=final_diff,
         workspace_mod=workspace_mod,
         last_error=session.last_error or "",
-        replacements=_replacements(tmp, session),
+        replacements=_capture_replacements(
+            {
+                tmp: "<CAPTURE_ROOT>",
+                session.session_dir: "<SESSION_DIR>",
+                session.workspace_root: "<WORKSPACE>",
+                session.artifacts_dir: "<ARTIFACTS>",
+                session.source_repo: "<SOURCE_REPO>",
+            },
+            session.session_id,
+        ),
         extras={"pytest_scope_unsupported": session.pytest_scope_unsupported},
     )
     return fingerprint
@@ -265,12 +272,11 @@ def capture_to(
                 mod_path = workspace / "mod.py"
                 workspace_mod = mod_path.read_text(encoding="utf-8") if mod_path.exists() else ""
                 known = {
-                    str(t.resolve()): "<CAPTURE_ROOT>",
-                    str(session_dir.resolve()): "<SESSION_DIR>",
-                    str(workspace.resolve()): "<WORKSPACE>",
-                    str(artifacts.resolve()): "<ARTIFACTS>",
-                    str((t / "repo").resolve()): "<SOURCE_REPO>",
-                    session_dir.name: "<SESSION>",
+                    t: "<CAPTURE_ROOT>",
+                    session_dir: "<SESSION_DIR>",
+                    workspace: "<WORKSPACE>",
+                    artifacts: "<ARTIFACTS>",
+                    t / "repo": "<SOURCE_REPO>",
                 }
                 last_error = "SESSION_CANCELLED: interrupted by the operator"
                 fp = write_v2_scenario(
@@ -280,7 +286,7 @@ def capture_to(
                     final_diff=final_diff,
                     workspace_mod=workspace_mod,
                     last_error=last_error,
-                    replacements=path_replacements(known),
+                    replacements=_capture_replacements(known, session_dir.name),
                     extras={"pytest_scope_unsupported": False},
                 )
                 results["cancelled"] = fp

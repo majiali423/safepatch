@@ -7,6 +7,7 @@ import json
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -274,6 +275,31 @@ def test_two_live_captures_are_equivalent(tmp_path: Path) -> None:
     capture_to(first, label="first")
     capture_to(second, label="second")
     report = compare_directories(first, second)
+    assert report.exit_code() == 0, report.errors
+
+
+def test_capture_with_aliased_temp_path_matches_baseline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    temp_root = tmp_path / "long temporary directory name"
+    temp_root.mkdir()
+    temp_name = str(temp_root.resolve())
+    if sys.platform == "win32":
+        import ctypes
+        from ctypes import wintypes
+
+        get_short_path = ctypes.WinDLL("kernel32", use_last_error=True).GetShortPathNameW
+        get_short_path.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
+        get_short_path.restype = wintypes.DWORD
+        size = get_short_path(temp_name, None, 0)
+        assert size, ctypes.get_last_error()
+        buffer = ctypes.create_unicode_buffer(size)
+        assert get_short_path(temp_name, buffer, size), ctypes.get_last_error()
+        temp_name = buffer.value
+    monkeypatch.setattr(tempfile, "tempdir", temp_name)
+    dest = tmp_path / "capture"
+    capture_to(dest)
+    report = compare_directories(CURRENT, dest)
     assert report.exit_code() == 0, report.errors
 
 
