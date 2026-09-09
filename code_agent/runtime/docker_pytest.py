@@ -11,17 +11,65 @@ import uuid
 from dataclasses import replace
 from pathlib import Path
 
+from code_agent.patching.test_collection import (
+    INVENTORY_FILENAME,
+    load_test_inventory_file,
+)
 from code_agent.runtime.docker_config import DockerRunConfig
+from code_agent.runtime.exit_classification import classify_runner_exit
 from code_agent.state import TestResult
+from code_agent.tracing.sanitize import sanitize_text
 
 DOCKER_IMAGE = "python:3.12-slim"
 LOCAL_PYTEST_IMAGE = "safepatch-pytest:local"
+MAX_CAPTURE_BYTES = 1_048_576
+MAX_LOG_CHARS = 1_048_576
 
 FAILED_TEST_RE = re.compile(
     r"^(FAILED|ERROR)\s+(\S+?)(?:\s+-|$)",
     re.MULTILINE,
 )
-# Docker allows [a-zA-Z0-9][a-zA-Z0-9_.-]*; keep well under the usual 63-char cap.
+INVENTORY_PLUGIN_DIR = Path(__file__).resolve().parent / "plugins"
+CONTROLLED_BOOTSTRAP = "/opt/safepatch/run_pytest.py"
+
+
+def pytest_args_from_product_argv(argv: list[str]) -> list[str] | None:
+    """Return pytest args after a product ``python -m pytest`` prefix, else None."""
+    if (
+        len(argv) >= 3
+        and argv[0] in {"python", "python3"}
+        and argv[1] == "-m"
+        and argv[2] == "pytest"
+    ):
+        return list(argv[3:])
+    return None
+
+
+def attach_inventory_plugin(cmd: list[str], config: DockerRunConfig) -> list[str]:
+    """Mount the bootstrap and load the plugin by absolute path.
+
+    Does not set PYTHONPATH or ``-p safepatch_inventory``; those are shadowable
+    from the target workdir. DockerRunConfig.to_dict() is unchanged.
+    """
+    argv = list(config.pytest_argv)
+    image_at = len(cmd) - len(argv) - 1
+    if image_at < 0 or cmd[image_at] != config.image:
+        return cmd
+    rest = pytest_args_from_product_argv(argv)
+    if rest is None:
+        return cmd
+    plugin = str(INVENTORY_PLUGIN_DIR.resolve())
+    return [
+        *cmd[:image_at],
+        "-v",
+        f"{plugin}:/opt/safepatch:ro",
+        config.image,
+        "python",
+        CONTROLLED_BOOTSTRAP,
+        *rest,
+    ]
+
+
 _CONTAINER_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$")
 _CONTAINER_NAME_PREFIX = "safepatch-pytest-"
 
@@ -148,7 +196,10 @@ class DockerPytestRunner:
                     error_kind="environment",
                 )
             else:
-                cmd = config.build_docker_cmd(str(test_copy.resolve()))
+                cmd = attach_inventory_plugin(
+                    config.build_docker_cmd(str(test_copy.resolve())),
+                    config,
+                )
                 try:
                     stdout, stderr, returncode = _run_docker_cmd(
                         cmd, timeout_seconds=config.timeout_seconds
@@ -165,6 +216,22 @@ class DockerPytestRunner:
                         ),
                         error_kind="timeout",
                     )
+                except RuntimeError as exc:
+                    _force_remove_container(config.container_name)
+                    message = str(exc)
+                    result = TestResult(
+                        exit_code=-1,
+                        stdout="",
+                        stderr=message,
+                        duration_sec=time.time() - started,
+                        environment_error=message
+                        if message.startswith("TEST_ENVIRONMENT_ERROR")
+                        else f"TEST_ENVIRONMENT_ERROR: {exc}",
+                        error_kind="environment",
+                    )
+                except KeyboardInterrupt:
+                    _force_remove_container(config.container_name)
+                    raise
                 except Exception as exc:  # noqa: BLE001
                     _force_remove_container(config.container_name)
                     result = TestResult(
@@ -177,24 +244,23 @@ class DockerPytestRunner:
                     )
                 else:
                     duration = time.time() - started
-                    env_err = None
-                    error_kind = None
-                    combined = stdout + "\n" + stderr
-                    if (
-                        "No module named pytest" in combined
-                        or "No module named 'pytest'" in combined
-                    ):
-                        env_err = "TEST_ENVIRONMENT_ERROR: pytest missing in container"
-                        error_kind = "environment"
+                    classified = classify_runner_exit(returncode, stdout, stderr)
+                    inventory = load_test_inventory_file(
+                        test_copy / INVENTORY_FILENAME
+                    )
                     result = TestResult(
                         exit_code=returncode,
                         stdout=stdout,
                         stderr=stderr,
                         duration_sec=duration,
-                        failed_tests=_extract_failed_tests(combined),
-                        traceback_summary=_extract_traceback_summary(combined),
-                        environment_error=env_err,
-                        error_kind=error_kind,
+                        failed_tests=_extract_failed_tests(stdout + "\n" + stderr),
+                        traceback_summary=_extract_traceback_summary(
+                            stdout + "\n" + stderr
+                        ),
+                        environment_error=classified.environment_error,
+                        error_kind=classified.error_kind,
+                        collected_test_files=None,
+                        test_inventory=inventory,
                     )
         finally:
             cleanup_error = _remove_disposable_test_copy(test_copy_parent, image=image)
@@ -246,33 +312,106 @@ class DockerPytestRunner:
 
 
 def _run_docker_cmd(
-    cmd: list[str], *, timeout_seconds: int
+    cmd: list[str], *, timeout_seconds: int, max_bytes: int = MAX_CAPTURE_BYTES
 ) -> tuple[str, str, int]:
-    """Run docker CLI; on timeout kill the client process and re-raise TimeoutExpired."""
+    """Run docker CLI with bounded stdout/stderr collection."""
+    import threading
+
     proc = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
+        text=False,
         env=_sanitized_subprocess_env(),
     )
-    try:
-        stdout, stderr = proc.communicate(timeout=timeout_seconds)
-    except subprocess.TimeoutExpired as exc:
-        proc.kill()
+    chunks = {"stdout": bytearray(), "stderr": bytearray()}
+    exceeded = {"value": False}
+    lock = threading.Lock()
+
+    def _kill_proc() -> None:
         try:
-            out, err = proc.communicate(timeout=10)
-        except Exception:  # noqa: BLE001
-            out, err = "", ""
+            proc.kill()
+        except OSError:
+            pass
+
+    def _read(stream, key: str) -> None:
+        if stream is None:
+            return
+        try:
+            while True:
+                data = _read_available_bytes(stream)
+                if not data:
+                    break
+                with lock:
+                    if len(chunks["stdout"]) + len(chunks["stderr"]) + len(data) > max_bytes:
+                        exceeded["value"] = True
+                        _kill_proc()
+                        break
+                    chunks[key].extend(data)
+        finally:
+            stream.close()
+
+    readers = [
+        threading.Thread(target=_read, args=(proc.stdout, "stdout"), daemon=True),
+        threading.Thread(target=_read, args=(proc.stderr, "stderr"), daemon=True),
+    ]
+    for thread in readers:
+        thread.start()
+    try:
+        proc.wait(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:
+        _kill_proc()
+        for thread in readers:
+            thread.join(timeout=2)
         raise subprocess.TimeoutExpired(
             cmd=cmd,
             timeout=timeout_seconds,
-            output=out or (exc.output if isinstance(exc.output, str) else ""),
-            stderr=err or (exc.stderr if isinstance(exc.stderr, str) else ""),
+            output=_decode_captured(chunks["stdout"]),
+            stderr=_decode_captured(chunks["stderr"]),
         ) from None
-    return stdout or "", stderr or "", int(proc.returncode or 0)
+    except KeyboardInterrupt:
+        _kill_proc()
+        for thread in readers:
+            thread.join(timeout=2)
+        raise
+    for thread in readers:
+        thread.join(timeout=5)
+    if exceeded["value"]:
+        _kill_proc()
+        try:
+            proc.wait(timeout=2)
+        except Exception:  # noqa: BLE001
+            pass
+        raise RuntimeError(
+            f"TEST_ENVIRONMENT_ERROR: docker output exceeded {max_bytes} bytes"
+        )
+    return (
+        _decode_captured(chunks["stdout"]),
+        _decode_captured(chunks["stderr"]),
+        int(proc.returncode or 0),
+    )
+
+
+def _read_available_bytes(stream) -> bytes:
+    """Return already-buffered bytes without waiting for a full 64 KiB block."""
+    read1 = getattr(stream, "read1", None)
+    if callable(read1):
+        return read1(4096) or b""
+    raw = getattr(stream, "raw", None)
+    if raw is not None:
+        try:
+            return raw.read(4096) or b""
+        except Exception:  # noqa: BLE001
+            pass
+    try:
+        return os.read(stream.fileno(), 4096) or b""
+    except Exception:  # noqa: BLE001
+        data = stream.read(4096)
+        return data or b""
+
+
+def _decode_captured(data: bytearray) -> str:
+    return bytes(data).decode("utf-8", errors="replace")
 
 
 def allocate_container_name(explicit: str | None = None) -> str:
@@ -315,9 +454,6 @@ def _prepare_test_copy_for_container_uid(test_copy: Path) -> None:
             mode = (mode & ~dir_traverse) | (current & dir_traverse)
         path.chmod(mode)
 
-
-# Backward-compatible alias for older imports/tests.
-_make_test_copy_writable = _prepare_test_copy_for_container_uid
 
 _PLACEHOLDER_PARENT = "<disposable-test-copy>"
 _PLACEHOLDER_WORKING = "<disposable-working-copy>"
@@ -485,6 +621,8 @@ def _with_cleanup_failure(result: TestResult, cleanup_error: str) -> TestResult:
         traceback_summary=result.traceback_summary,
         environment_error=environment_error,
         error_kind=error_kind,
+        collected_test_files=result.collected_test_files,
+        test_inventory=result.test_inventory,
     )
 
 
@@ -632,4 +770,7 @@ def _format_log(
         "--- traceback_summary ---",
         result.traceback_summary,
     ]
-    return "\n".join(parts)
+    text = "\n".join(parts)
+    if len(text) > MAX_LOG_CHARS:
+        text = text[:MAX_LOG_CHARS] + "\n# truncated: log exceeded size cap\n"
+    return sanitize_text(text)

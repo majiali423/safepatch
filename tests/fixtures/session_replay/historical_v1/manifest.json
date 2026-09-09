@@ -1,0 +1,18 @@
+{
+  "format": "safepatch_session_replay",
+  "version": 1,
+  "label": "analysis_loop_split_historical_event_names_only",
+  "scenarios": [
+    "base_changed",
+    "cancelled",
+    "deadline_after_model",
+    "evidence_then_patch",
+    "format_exhausted",
+    "regen_exhausted",
+    "rejected",
+    "success",
+    "unsupported_pytest"
+  ],
+  "evidence_scope": "event_names_and_selected_counters",
+  "notes": "Not full trace payload. Not pre-refactor payload proof. Do not overwrite output/analysis_loop_split_0908/runs."
+}

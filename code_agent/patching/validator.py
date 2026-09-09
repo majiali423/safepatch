@@ -66,9 +66,11 @@ class PolicyValidator:
         *,
         allow_test_changes: bool = False,
         allow_new_tests: bool = True,
+        collected_test_files: set[str] | None = None,
     ) -> None:
         self.allow_test_changes = allow_test_changes
         self.allow_new_tests = allow_new_tests
+        self.collected_test_files = collected_test_files
 
     def validate(
         self, proposal: PatchProposal, workspace_root: Path
@@ -78,6 +80,7 @@ class PolicyValidator:
             workspace_root,
             allow_test_changes=self.allow_test_changes,
             allow_new_tests=self.allow_new_tests,
+            collected_test_files=self.collected_test_files,
         )
 
 
@@ -147,6 +150,7 @@ def validate_proposal(
     *,
     allow_test_changes: bool = False,
     allow_new_tests: bool = True,
+    collected_test_files: set[str] | None = None,
 ) -> ValidationResult:
     errors: list[str] = []
     diff = proposal.unified_diff
@@ -256,6 +260,7 @@ def validate_proposal(
         unified_diff=diff,
         allow_test_changes=allow_test_changes,
         allow_new_tests=allow_new_tests,
+        collected_test_files=collected_test_files,
     )
     errors.extend(integrity.errors)
 

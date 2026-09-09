@@ -1,8 +1,7 @@
 # SafePatch Architecture
 
-Status: **Unreleased reliability design; current product tag v0.3.1**. This document describes system structure, session
-workflow, module responsibilities, and reliability trade-offs. It is not a
-substitute for reading the source under `code_agent/`.
+This guide describes the current development tree: session workflow, module
+responsibilities and reliability trade-offs. Package version: 0.3.1.
 
 ## Positioning
 
@@ -23,15 +22,19 @@ flowchart LR
   CLI[cli.py] --> CTRL[controller.TaskController]
   CTRL --> WS[repository.workspace]
   CTRL --> MAP[repository.repo_map]
-  CTRL --> LLM[llm.LLMClient]
-  CTRL --> TOOLS[tools.registry]
-  CTRL --> POL[patching.validator]
-  CTRL --> PF[patching.preflight]
+  CTRL --> LOOP[analysis_loop.AnalysisLoop]
+  LOOP --> LLM[llm.LLMClient]
+  LOOP --> TOOLS[tools.registry]
+  LOOP --> POL[patching.validator]
+  LOOP --> GATE[patch_gate.PatchGate]
+  GATE --> PF[patching.preflight]
   PF --> ENG[patching.hunk_engine]
   CTRL --> APPR[approve callback]
-  CTRL --> APPL[patching.applier]
+  CTRL --> REPAIR[repair_executor.RepairExecutor]
+  REPAIR --> APPL[patching.applier]
   APPL --> ENG
   CTRL --> DOCK[runtime.docker_pytest]
+  CTRL --> FINAL[session_finalizer.SessionFinalizer]
   CTRL --> TRACE[tracing.recorder]
   CTRL --> STATE[state.TaskSession]
   EVAL[eval.hidden] -.->|outside product loop| DOCK
@@ -39,11 +42,12 @@ flowchart LR
 
 | Area | Path | Responsibility |
 |---|---|---|
-| Orchestration | `controller.py` | Session state machine |
+| Orchestration | `controller.py` | Import, baseline, approval, hash re-check, repair wiring, finalize |
+| Analysis loop | `analysis_loop.py` | Model/tool turns, format retry, evidence, policy validate, PatchGate bind |
 | CLI | `cli.py` | Arguments, Docker preflight, approval UI, exit codes |
 | State | `state.py` | `SessionStatus`, `TaskSession`, `ApprovalBinding`, summary counters |
 | Model I/O | `llm.py` | System prompt, JSON tool-call parsing, format-retry hints, dry-run |
-| Tools | `tools/*` | Read-only inspection; `propose_patch` / `finish` handled in controller |
+| Tools | `tools/*` | Read-only inspection; `propose_patch` / `finish` handled in AnalysisLoop |
 | Policy | `patching/validator.py`, `test_integrity.py` | Path, size, test-integrity rules |
 | Exact matcher | `patching/hunk_engine.py` | Sole unified-diff hunk matcher (no fuzzy) |
 | Preflight | `patching/preflight.py`, `hashes.py` | Read-only apply simulation; content hashes |
@@ -61,12 +65,15 @@ flowchart LR
 3. **Baseline Docker pytest** — runs on a disposable copy; a green baseline is
    recorded but does not independently verify the requested change.
 4. **Loop** while not terminal and `attempts_used < max_attempts`:
-   - `_analyze_phase` — tool loop; on `propose_patch`: parse → policy → **preflight**
+   - `AnalysisLoop.run` — tool loop; on `propose_patch`: parse → policy → **preflight**
    - mismatch → patch regeneration (≤2), no `attempts_used` increment, no approval
-   - success → `ApprovalBinding`
+   - success → `ApprovalBinding` returned to the controller
    - approval (hash-bound); tree change → `PATCH_BASE_CHANGED`
-   - exact apply success → `attempts_used += 1` → pytest
-5. **Finalize** — write `summary.json`, `final.diff`, close trace.
+   - `RepairExecutor` exact apply success → `attempts_used += 1` → pytest
+5. **Finalize** — `SessionFinalizer` writes `summary.json`, `final.diff`, close trace.
+
+A captured dry-run walkthrough (commands and artifacts) is in
+[AnalysisLoop](ANALYSIS_LOOP.md).
 
 ## Counter semantics
 
@@ -129,4 +136,5 @@ hidden tests.
 
 - [Patch Applicability (v0.3)](V0.3_PATCH_APPLICABILITY.md)
 - [Demo](DEMO.md)
-- [Walkthrough](WALKTHROUGH.md)
+- [Analysis-loop replay](ANALYSIS_LOOP.md)
+- [Development and validation](DEVELOPMENT.md)

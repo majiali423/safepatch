@@ -3,25 +3,15 @@ from __future__ import annotations
 import os
 import shutil
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
-IGNORE_DIR_NAMES = {
-    ".git",
-    ".venv",
-    "venv",
-    "__pycache__",
-    "node_modules",
-    ".mypy_cache",
-    ".pytest_cache",
-    ".ruff_cache",
-    "dist",
-    "build",
-    ".eggs",
-    ".tox",
-    ".idea",
-    ".vscode",
-}
+from code_agent.repository.import_policy import (
+    IGNORE_DIR_NAMES,
+    ImportFilter,
+    resolve_session_base,
+    validate_session_location,
+)
 
 MAX_FILES = 500
 MAX_TOTAL_BYTES = 5 * 1024 * 1024  # 5 MB
@@ -39,10 +29,11 @@ class ImportedWorkspace:
     artifacts_dir: Path
     file_count: int
     total_bytes: int
+    excluded_counts: dict[str, int] = field(default_factory=dict)
 
 
 def create_session_dir(base_dir: Path | None = None) -> Path:
-    root = Path(base_dir or Path.cwd() / ".safepatch_sessions")
+    root = resolve_session_base(base_dir)
     root.mkdir(parents=True, exist_ok=True)
     session_id = uuid.uuid4().hex[:12]
     session_dir = root / session_id
@@ -58,48 +49,77 @@ def import_repository(
     if not source.exists() or not source.is_dir():
         raise WorkspaceError(f"Repository path does not exist: {source}")
 
-    file_count, total_bytes = _measure_importable_tree(source)
+    planned_base = resolve_session_base(session_base)
+    try:
+        validate_session_location(source, planned_base)
+    except ValueError as exc:
+        raise WorkspaceError(str(exc)) from exc
+
+    # Exclude the session root even before it exists so in-repo defaults are safe.
+    try:
+        session_root = planned_base.resolve()
+    except OSError:
+        session_root = planned_base
+    import_filter = ImportFilter(source=source, session_root=session_root)
+
+    file_count, total_bytes = _measure_importable_tree(source, import_filter)
 
     session_dir = create_session_dir(session_base)
     workspace_root = session_dir / "working_copy"
     artifacts_dir = session_dir / "artifacts"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
 
+    # Also exclude the concrete session directory created under the source tree.
+    import_filter.extra_exclude_roots = (session_dir.resolve(),)
+    destination = workspace_root.resolve()
+    import_filter.extra_exclude_roots = (session_dir.resolve(), destination)
+
     def _ignore(dir_path: str, names: list[str]) -> set[str]:
+        directory = Path(dir_path)
         ignored: set[str] = set()
+        try:
+            if directory.resolve() == destination:
+                # Never walk into the copy destination if it is inside the source.
+                return set(names)
+        except OSError:
+            pass
         for name in names:
-            full = Path(dir_path) / name
-            if name in IGNORE_DIR_NAMES:
+            full = directory / name
+            if full.is_symlink():
+                import_filter.note("symlink")
                 ignored.add(name)
                 continue
-            # Never copy symlinks: following them could pull host files into the copy.
-            if full.is_symlink():
+            if import_filter.should_ignore_name(directory, name):
                 ignored.add(name)
         return ignored
 
     shutil.copytree(source, workspace_root, ignore=_ignore, symlinks=False)
 
-    # Recheck the copied tree: source files can change between preflight and copy.
     copied_file_count = 0
     copied_total_bytes = 0
     for path in workspace_root.rglob("*"):
         if path.is_symlink():
-            # Defense in depth: drop any symlink that still appears.
             path.unlink(missing_ok=True)
             continue
-        if path.is_file():
-            copied_file_count += 1
-            copied_total_bytes += path.stat().st_size
-            if copied_file_count > MAX_FILES:
-                shutil.rmtree(session_dir, ignore_errors=True)
-                raise WorkspaceError(
-                    f"Repository exceeds max file count ({MAX_FILES})"
-                )
-            if copied_total_bytes > MAX_TOTAL_BYTES:
-                shutil.rmtree(session_dir, ignore_errors=True)
-                raise WorkspaceError(
-                    f"Repository exceeds max size ({MAX_TOTAL_BYTES} bytes)"
-                )
+        if not path.is_file():
+            continue
+        rel = path.relative_to(workspace_root)
+        source_equiv = source / rel
+        decision = import_filter.decide_file(source_equiv if source_equiv.exists() else path)
+        if not decision.include:
+            path.unlink(missing_ok=True)
+            import_filter.note(decision.category or "excluded")
+            continue
+        copied_file_count += 1
+        copied_total_bytes += path.stat().st_size
+        if copied_file_count > MAX_FILES:
+            shutil.rmtree(session_dir, ignore_errors=True)
+            raise WorkspaceError(f"Repository exceeds max file count ({MAX_FILES})")
+        if copied_total_bytes > MAX_TOTAL_BYTES:
+            shutil.rmtree(session_dir, ignore_errors=True)
+            raise WorkspaceError(
+                f"Repository exceeds max size ({MAX_TOTAL_BYTES} bytes)"
+            )
 
     return ImportedWorkspace(
         session_id=session_dir.name,
@@ -108,29 +128,28 @@ def import_repository(
         artifacts_dir=artifacts_dir,
         file_count=file_count,
         total_bytes=total_bytes,
+        excluded_counts=dict(import_filter.excluded_counts),
     )
 
 
-def _measure_importable_tree(source: Path) -> tuple[int, int]:
-    """Measure the exact regular files eligible for a workspace import.
-
-    This runs before ``copytree`` so repository caps prevent an oversized source
-    from consuming session disk space. Symlinks and ignored directories follow
-    the same policy as the copy operation.
-    """
+def _measure_importable_tree(source: Path, import_filter: ImportFilter) -> tuple[int, int]:
     file_count = 0
     total_bytes = 0
 
     for root_text, dir_names, file_names in os.walk(source, topdown=True, followlinks=False):
         root = Path(root_text)
-        dir_names[:] = [
-            name
-            for name in dir_names
-            if name not in IGNORE_DIR_NAMES and not (root / name).is_symlink()
-        ]
+        keep_dirs: list[str] = []
+        for name in dir_names:
+            path = root / name
+            if path.is_symlink() or import_filter.should_ignore_name(root, name):
+                continue
+            keep_dirs.append(name)
+        dir_names[:] = keep_dirs
         for name in file_names:
             path = root / name
             if path.is_symlink() or not path.is_file():
+                continue
+            if import_filter.should_ignore_name(root, name):
                 continue
             file_count += 1
             total_bytes += path.stat().st_size
@@ -159,7 +178,6 @@ def safe_resolve(workspace_root: Path, user_path: str) -> Path:
         raise WorkspaceError("Path traversal ('..') is not allowed")
 
     root = workspace_root.resolve()
-    # Walk components without following the final symlink until checked.
     cursor = root
     for part in Path(raw).parts:
         if part in ("", "."):
@@ -170,11 +188,8 @@ def safe_resolve(workspace_root: Path, user_path: str) -> Path:
             try:
                 resolved.relative_to(root)
             except ValueError as exc:
-                raise WorkspaceError(
-                    "Symlink escapes workspace root"
-                ) from exc
+                raise WorkspaceError("Symlink escapes workspace root") from exc
         if not cursor.exists():
-            # Allow resolving not-yet-existing paths for tooling, still rooted.
             candidate = (root / raw).resolve()
             try:
                 candidate.relative_to(root)

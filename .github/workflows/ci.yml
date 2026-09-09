@@ -2,7 +2,13 @@ name: CI
 
 on:
   push:
+    branches: [master]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -11,6 +17,7 @@ jobs:
   unit:
     name: Unit (${{ matrix.os }}, Python ${{ matrix.python }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -29,15 +36,27 @@ jobs:
           cache: pip
       - name: Install development dependencies
         run: python -m pip install -e ".[dev]"
-      - name: Run non-Docker tests
+      - name: Run offline tests
         run: >-
-          python -m pytest -q -m "not docker_e2e"
+          python -m pytest -q -m "not docker_e2e and not packaging_network"
           -p no:cacheprovider
           --basetemp .test-artifacts
+      - name: Preserve failed replay captures
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: replay-${{ matrix.os }}-py${{ matrix.python }}
+          path: |
+            .test-artifacts/iso*/v2/
+            .test-artifacts/test_two_live_captures_are_equ*/
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
 
   quality:
     name: Product quality and wheel smoke
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -47,7 +66,13 @@ jobs:
       - name: Install development dependencies
         run: python -m pip install -e ".[dev]"
       - name: Lint product code
-        run: python -m ruff check code_agent tests
+        run: python -m ruff check code_agent tests devtools
+      - name: Type-check analysis loop boundary
+        run: python -m mypy
+      - name: Compile product modules
+        run: python -m compileall -q code_agent
+      - name: Offline mechanism experiment
+        run: python examples/agent_experiments/run_offline.py
       - name: Verify published benchmark evidence
         run: |
           python examples/real_bug_benchmark/verify_published_results.py
@@ -71,9 +96,28 @@ jobs:
         working-directory: .smoke-work
         run: ../.smoke-venv/bin/safepatch --help
 
+  packaging-network:
+    name: Packaging network
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install development dependencies
+        run: python -m pip install -e ".[dev]"
+      - name: Run packaging_network tests
+        run: >-
+          python -m pytest -q -m packaging_network
+          -p no:cacheprovider
+          --basetemp .packaging-test-artifacts
+
   docker-e2e:
     name: Docker E2E
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -85,6 +129,8 @@ jobs:
       - name: Build pinned pytest image
         run: safepatch --build-image
       - name: Run Docker E2E tests
+        env:
+          SAFEPATCH_REQUIRE_DOCKER_E2E: "1"
         run: >-
           python -m pytest -q -m docker_e2e
           -p no:cacheprovider

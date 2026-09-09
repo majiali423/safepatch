@@ -1,127 +1,36 @@
 # SafePatch
 
-[English](README.md) | [中文](README_zh.md)
+[English](README.md) · [中文](README_zh.md) · [Documentation](docs/README.md)
 
-SafePatch is a controlled code-maintenance agent for small Python
-repositories. It emphasizes human approval, restricted tools, isolated
-tests, auditable traces, and fail-closed safety boundaries.
+SafePatch is a code-repair agent for small Python repositories. It inspects code,
+proposes a patch, asks for approval, and runs pytest in a disposable Docker copy.
+Each session produces a diff, test logs, a structured summary, and an audit trace.
 
-SafePatch is the public product name, installable Python package, and CLI
-command. Install it as `safepatch` and run it with `safepatch`.
+**Start here:** [five-minute engineering review](docs/RECRUITER_BRIEF.md) ·
+[deterministic demo](docs/DEMO.md) · [architecture](docs/ARCHITECTURE.md)
 
-Reviewing this as an engineering project? Start with the
-[5-minute reviewer brief](docs/RECRUITER_BRIEF.md), then run the deterministic
-[demo](docs/DEMO.md).
-
-## Project status
-
-- Package version: **0.3.1** (`pyproject.toml`)
-- Reliability work described in [Next Release Notes](docs/NEXT_RELEASE_NOTES.md)
-  is **Unreleased** — not a published release commitment
-- Licensed under MIT; see [LICENSE](LICENSE)
-- Primary target: small local Python repositories that use pytest
-- Scope remains intentionally limited; this is an engineering project, not a
-  general-purpose software-engineering platform
-
-## Why SafePatch
-
-LLM-assisted repair often fails for engineering reasons rather than pure
-logic errors:
-
-- Generated patches may touch unrelated files
-- Agents may skip or weaken human approval
-- Tests run on the formal working copy can pollute session state
-- Docker timeouts can leave containers behind
-- Model output and tool calls need strict parsing and typed boundaries
-- Green automated tests do not by themselves prove an independent request
-  oracle was satisfied
-- Benchmarks and traces should stay auditable without overstating capability
-
-SafePatch keeps the product path narrow so those failure modes stay
-visible and enforceable.
-
-## Safety model
-
-Defense-in-depth controls — not a claim of absolute safety:
-
-- The model only sees a session working copy, not an open host shell
-- No arbitrary Shell, browser, or network tools for the model
-- Changes require human approval before apply (unless `--yes` is explicitly
-  used by the operator)
-- Declared changed-file sets must match the actual normalized diff file set
-- Pytest runs in Docker with `--network none`
-- Fixed non-root UID inside the container
-- Capability drop and `no-new-privileges`
-- Read-only container root filesystem. The repository test copy is the only
-  writable repository mount; a size-limited tmpfs is also mounted at `/tmp`
-  for temporary runtime files
-- Each pytest run uses a unique disposable test copy
-- Timed-out runs force-remove the exact named container
-- Cleanup failures surface as environment errors (fail-closed)
-- Disposable host paths are redacted from persisted logs and result text
-- Repair attempts are budget-limited; the default maximum is three attempts
-
-The configured LLM provider still requires host network access. Repository
-maps, selected snippets, tracebacks, and diffs may be sent to that provider.
-
-## Architecture
+## How it works
 
 ```text
-Task request
-    ↓
-Repository inspection
-    ↓
-Model tool call
-    ↓
-Patch proposal
-    ↓
-Static validation
-    ↓
-Human approval
-    ↓
-Apply to working copy
-    ↓
-Docker pytest on disposable copy
-    ↓
-Verification result
-    ↓
-Trace / diff / logs
+Import repository → baseline pytest → model inspection and proposal
+    → policy validation → exact preflight → hash-bound approval
+    → apply patch → Docker pytest → summary, trace and diff
 ```
 
-Main pieces in `code_agent/`:
+- **Controlled editing:** exact diffs or revision-bound text replacements;
+  existing tests and configuration are protected by default.
+- **Explicit budgets:** exploration, evidence requests, regeneration and repair
+  attempts have separate counters and stopping rules.
+- **Review before execution:** approval binds both the patch and working-tree
+  hashes. Changed input requires a new review.
+- **Isolated tests:** pytest runs as a non-root user with networking disabled,
+  a read-only container root and a disposable repository copy.
+- **Honest verification:** a green baseline followed by green tests is reported
+  as `TESTS_PASSED_UNVERIFIED` without an independent request oracle.
 
-| Area | Role |
-|---|---|
-| `controller.py` | Session state machine / agent loop |
-| `patching/` | Proposal, policy validation, preflight, exact apply |
-| `workflow.py` | Fail-closed approval and verification policy |
-| `runtime/docker_pytest.py` | Disposable-copy Docker pytest runner |
-| `state.py` | Session status, counters, approval bindings |
-| `llm.py` | Provider boundary and tool-call parsing |
-| `tools/` | Restricted read-only inspection tools |
-| `eval/` | Hidden evaluation outside the product loop |
-| `tracing/` | Append-only redacted traces |
+## Quick start
 
-See [Architecture](docs/ARCHITECTURE.md) for module detail and failure
-classification.
-
-## Key behaviors
-
-Implemented behaviors (not aspirational claims):
-
-- Structured patch proposals (unified diff and revision-bound edits)
-- Exact declared/actual changed-file validation
-- Path normalization that preserves real `a/` / `b/` path components
-- Fail-closed approval when no approval handler is supplied
-- Typed schemas plus frozen legacy tool-call parsing
-- Disposable Docker test copies per pytest run
-- Exact-name timeout container cleanup
-- Cleanup / disposable path redaction in persisted surfaces
-- Hidden benchmark isolation on temporary evaluation copies
-- Benchmark manifest drift checks without calling a paid model
-- Cross-platform CI (unit, quality/wheel smoke, Docker E2E)
-
-## Installation
+Requires Python 3.10+ and a running Docker daemon.
 
 ```bash
 git clone https://github.com/majiali423/safepatch.git
@@ -129,106 +38,42 @@ cd safepatch
 python -m venv .venv
 ```
 
-Activate the virtual environment:
-
-```powershell
-# Windows
-.venv\Scripts\activate
-```
+Activate with `source .venv/bin/activate` on Linux/macOS or
+`.venv\Scripts\Activate.ps1` in PowerShell, then:
 
 ```bash
-# Linux / macOS
-source .venv/bin/activate
-```
-
-Install the package (development extras optional for tests and lint):
-
-```bash
-python -m pip install -e .
-# or
 python -m pip install -e ".[dev]"
-```
-
-Docker is required for pytest isolation:
-
-```bash
-docker info
 safepatch --build-image
 safepatch --docker-check
+safepatch examples/buggy_calculator "divide must raise ValueError when b is zero" --dry-run-script examples/dry_run_fix_divide.json --yes
 ```
 
-Copy `.env.example` to `.env` and set provider credentials when running a
-live model (not needed for dry-run demos).
+The demo uses fixed model responses and requires no API key. Omit `--yes` to
+review the patch interactively. The source repository is unchanged; inspect the
+printed session directory for the repaired working copy and artifacts.
 
-## Example workflow
+For a live model, copy `.env.example` to `.env`, configure the provider, and omit
+`--dry-run-script`. Repository snippets, tracebacks and proposed diffs are sent
+to that provider. See the [demo guide](docs/DEMO.md) for the full workflow.
 
-Minimal deterministic path (no API key): uses a small demo repo and a frozen
-tool-call script.
+## Architecture
 
-```powershell
-safepatch examples\buggy_calculator `
-  "divide raises ZeroDivisionError on b==0; it should raise ValueError." `
-  --dry-run-script examples\dry_run_fix_divide.json `
-  --yes
-```
+| Component | Responsibility |
+| --- | --- |
+| `TaskController` | Import, baseline, approval and session lifecycle |
+| `AnalysisLoop` | Model calls, inspection, evidence and proposal retries |
+| `PatchGate` | Preflight and approval binding |
+| `RepairExecutor` | Apply the approved patch and run tests |
+| `SessionFinalizer` | Metrics, trace and artifact output |
 
-Typical live workflow:
-
-1. Point `safepatch` at a small Python + pytest repository copy
-2. Provide a bug or change description (argument or `--description-file`)
-3. Inspect the patch proposal shown by the CLI
-4. Approve or reject at the human approval prompt (omit `--yes`)
-5. Wait for Docker pytest on a disposable copy
-6. Review `final.diff`, pytest logs, `summary.json`, and `trace.jsonl` under
-   the session artifacts directory
-
-Selected exit codes: `0` succeeded, `3` rejected, `4` environment/timeout,
-`5` invalid model output, `6` patch not applicable, `7` base changed after
-approval, `8` read budget exhausted, `9` tests green without an independent
-request oracle (`TESTS_PASSED_UNVERIFIED`).
-
-More detail: [Demo](docs/DEMO.md).
-
-## Docker test isolation
-
-- Pytest does not run against the formal session `working_copy`
-- Each run creates a unique disposable test copy
-- The container uses UID 1000 and defense-in-depth restrictions
-- Files created during tests do not write back into the formal working copy
-- Timeouts target the exact unique container name for force-remove
-- Permission leftovers may be wiped by a restricted cleanup container
-- Cleanup mounts only the disposable `working_copy` directory
-- Cleanup failure returns an environment error rather than silent success
-- Persisted logs avoid host absolute disposable paths
+The [architecture guide](docs/ARCHITECTURE.md) explains state transitions and
+trade-offs. [Analysis-loop replay](docs/ANALYSIS_LOOP.md) provides a deterministic
+way to inspect component boundaries and detect behavioral drift.
 
 ## Evaluation
 
-Keep these layers distinct:
-
-| Layer | Purpose |
-|---|---|
-| Unit / integration tests | Product behavior without Docker or with mocks |
-| Docker E2E | Real daemon negative/security paths |
-| Real-bug benchmark | Frozen historical BugsInPy-derived tasks |
-| Hidden evaluation | Optional post-success checks outside the agent loop |
-| Historical model reports | Recorded small-sample outcomes with stated limits |
-
-Caution (retained as project policy):
-
-- Benchmark sample sizes are small
-- Results are auditable engineering evidence, not general capability claims
-- They do not demonstrate production readiness on arbitrary repositories
-- Historical model outcomes may not be fully recomputable from repository
-  files alone (provider/API, sampling, and environment boundaries)
-- Irreproducibility boundaries are documented in the frozen reports
-- Single-run pass rates must not be packaged as stable product accuracy
-
-The real-bug evidence currently covers 10 environment-accepted tasks and 30
-effective model runs across two frozen batches: 26/30 hidden/overall passes.
-This is an auditable aggregate, not a controlled comparison or a general
-production-accuracy claim; see the [extension batch report](examples/real_bug_benchmark/EXTENSION_PILOT_REPORT.md).
-
-Verify committed evidence without a model account:
+The published 21-run real-bug bundle records **17/21** hidden-test successes.
+Its records can be checked without model access:
 
 ```bash
 python examples/real_bug_benchmark/verify_published_results.py
@@ -236,72 +81,41 @@ python examples/real_bug_benchmark/verify_preflight_ablation.py
 python examples/llm_benchmark/verify_manifest.py
 ```
 
-Docker-backed environment rebuild (when needed):
+These are small, historical experiments. The separate preflight comparison
+observed 11/14 versus 9/14 successes, but no preflight rejection occurred, so
+it does not establish a causal benefit. The later 9/9 extension is a separate
+report rather than part of the verifier-backed bundle. See the
+[evaluation guide](docs/EVALUATION.md) and [failure case study](docs/FAILURE_CASE_STUDY.md).
+
+## Scope
+
+Automatic repair targets small local Python + pytest projects. Configuration
+must fit the [supported subset](docs/PYTEST_SUPPORT.md). Executable `conftest.py`,
+including ordinary fixtures, is currently unsupported; the session stops before
+model analysis or patch application after running the baseline.
+
+The model has no shell, browser, network or direct-write tool. Docker reduces
+execution risk but is not a complete security sandbox. Passing tests does not
+prove business correctness. SafePatch does not push commits or merge PRs.
+
+## Development
 
 ```bash
-python examples/real_bug_benchmark/verify.py
+python -m pytest -q -m "not docker_e2e and not packaging_network"
+python -m ruff check code_agent tests devtools
+python -m mypy
 ```
 
-Reports and design notes live under `examples/real_bug_benchmark/` and
-`examples/llm_benchmark/`.
-
-## Development and validation
-
-```bash
-python -m pip install -e ".[dev]"
-python -m pytest -q -p no:cacheprovider --basetemp .test-artifacts
-python -m pytest -m docker_e2e -q -p no:cacheprovider --basetemp .docker-test-artifacts
-python -m ruff check code_agent tests
-python examples/llm_benchmark/verify_manifest.py
-git diff --check
-```
-
-Optional distribution check (requires the `build` extra from `.[dev]`):
-
-```bash
-python -m build
-```
-
-Do not commit `.env`, session directories, or `examples/llm_benchmark/results/`.
-
-## Limitations
-
-- Targets small Python + pytest repositories only
-- Does not expose arbitrary Shell to the model
-- Does not auto-merge PRs or push commits
-- Does not index large repositories
-- Does not drive browsers
-- Does not orchestrate multi-agent teams
-- Model quality still bounds patch quality
-- Passing tests does not guarantee business-semantic correctness
-- Human approval remains a critical control point
-- Docker isolation is defense-in-depth, not a complete security sandbox
-- Benchmarks remain limited in scale and scope
-
-## Repository layout
+The [development guide](docs/DEVELOPMENT.md) covers Docker tests, packaging,
+replay fixtures and repository hygiene. Package version: **0.3.1**; the default
+branch includes development changes and is not itself a tagged release.
 
 ```text
-code_agent/     Internal implementation package (controller, patching, runtime, tools, eval)
-tests/          Unit, integration, and Docker E2E tests
-examples/       Demo repos, dry-run scripts, benchmarks, frozen evidence
-docs/           Architecture, recovery, observability, roadmap notes
+code_agent/  Product implementation
+tests/       Behavior, security and runtime regression tests
+devtools/    Deterministic session capture and comparison
+examples/    Runnable demos, benchmark tasks and published evidence
+docs/        Usage, architecture and evaluation guides
 ```
 
-## Documentation
-
-| Document | Description |
-|---|---|
-| [中文 README](README_zh.md) | Chinese edition |
-| [Architecture](docs/ARCHITECTURE.md) | Modules and call chain |
-| [Reliability Roadmap](docs/RELIABILITY_ROADMAP.md) | Engineering hardening roadmap |
-| [Next Release Notes](docs/NEXT_RELEASE_NOTES.md) | Unreleased reliability work |
-| [Release Checklist](docs/RELEASE_CHECKLIST.md) | Current release-candidate gates and evidence |
-| [Session Observability](docs/SESSION_OBSERVABILITY.md) | Per-session metrics |
-| [Patch Recovery](docs/PATCH_RECOVERY.md) | Safe recovery design |
-| [Demo](docs/DEMO.md) | End-to-end demonstration |
-| [Failure Case Study](docs/FAILURE_CASE_STUDY.md) | Honest hidden-test failures |
-| [Real-bug Benchmark Design](examples/real_bug_benchmark/DESIGN.md) | Frozen task protocol |
-
-## License
-
-Copyright (c) 2026 Jiali Ma. Licensed under the [MIT License](LICENSE).
+Licensed under [MIT](LICENSE). Copyright (c) 2026 Jiali Ma.

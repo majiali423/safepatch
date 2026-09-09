@@ -398,3 +398,560 @@ def test_no_host_pytest_fallback_when_docker_missing(monkeypatch, tmp_path: Path
     assert result.environment_error is not None
     assert result.environment_error.startswith("TEST_ENVIRONMENT_ERROR:")
     assert "Docker daemon unavailable" in result.environment_error
+
+
+def _custom_collector_repo(root: Path) -> Path:
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "pytest.ini").write_text("[pytest]\npythonpath = .\n", encoding="utf-8")
+    (root / "mod.py").write_text("def f():\n    return 1\n", encoding="utf-8")
+    (root / "test_mod.py").write_text(
+        "from mod import f\ndef test_f():\n    assert f() == 2\n",
+        encoding="utf-8",
+    )
+    (root / "checks.py").write_text(
+        "def test_guard():\n    assert 1 == 1\n", encoding="utf-8"
+    )
+    (root / "conftest.py").write_text(
+        "import pytest\n"
+        "def pytest_collect_file(file_path, parent):\n"
+        '    if file_path.name == "checks.py":\n'
+        "        return pytest.Module.from_parent(parent, path=file_path)\n",
+        encoding="utf-8",
+    )
+    return root
+
+
+_SHADOW_PLUGIN = (
+    "import json\nfrom pathlib import Path\n"
+    "def pytest_sessionfinish(session, exitstatus):\n"
+    '    print("SYNTHETIC_PLUGIN_ORIGIN=" + __file__)\n'
+    "    payload = {"
+    '"version":1,"source":"safepatch_inventory_plugin",'
+    '"complete":True,"truncated":False,"files":["/work/test_mod.py"]}\n'
+    '    Path("/work/.safepatch_pytest_inventory.json").write_text(json.dumps(payload))\n'
+)
+
+
+@pytest.mark.docker_e2e
+def test_d1_same_name_py_does_not_replace_controlled_plugin(tmp_path: Path):
+    from code_agent.patching.test_collection import InventoryCompleteness
+
+    runner = _require_docker()
+    workspace = _custom_collector_repo(tmp_path / "shadow_py")
+    (workspace / "safepatch_inventory.py").write_text(_SHADOW_PLUGIN, encoding="utf-8")
+    result = runner.run_pytest(workspace)
+    combined = result.stdout + "\n" + result.stderr
+    assert result.environment_error is None, result.environment_error
+    assert "SAFEPATCH_CONTROLLED_PLUGIN_ORIGIN=/opt/safepatch/safepatch_inventory.py" in combined
+    assert "SYNTHETIC_PLUGIN_ORIGIN=/work/safepatch_inventory.py" not in combined
+    inventory = result.test_inventory
+    assert inventory is not None
+    assert inventory.origin_trusted is False
+    assert inventory.completeness is not InventoryCompleteness.COMPLETE
+
+
+@pytest.mark.docker_e2e
+def test_d1_same_name_package_does_not_replace_controlled_plugin(tmp_path: Path):
+    runner = _require_docker()
+    workspace = _custom_collector_repo(tmp_path / "shadow_pkg")
+    pkg = workspace / "safepatch_inventory"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text(_SHADOW_PLUGIN, encoding="utf-8")
+    result = runner.run_pytest(workspace)
+    combined = result.stdout + "\n" + result.stderr
+    assert result.environment_error is None, result.environment_error
+    assert "SAFEPATCH_CONTROLLED_PLUGIN_ORIGIN=/opt/safepatch/safepatch_inventory.py" in combined
+    assert "SYNTHETIC_PLUGIN_ORIGIN=/work/safepatch_inventory" not in combined
+
+
+@pytest.mark.docker_e2e
+def test_d1_preseeded_inventory_is_not_complete(tmp_path: Path):
+    from code_agent.patching.test_collection import InventoryCompleteness
+
+    runner = _require_docker()
+    workspace = _custom_collector_repo(tmp_path / "preseed")
+    (workspace / ".safepatch_pytest_inventory.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "source": "safepatch_inventory_plugin",
+                "complete": True,
+                "truncated": False,
+                "files": ["/work/test_mod.py"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    result = runner.run_pytest(workspace)
+    inventory = result.test_inventory
+    assert inventory is not None
+    assert inventory.origin_trusted is False
+    assert inventory.completeness in {
+        InventoryCompleteness.UNVERIFIED,
+        InventoryCompleteness.PARTIAL,
+        InventoryCompleteness.MISSING,
+        InventoryCompleteness.FAILED,
+    }
+    assert inventory.completeness is not InventoryCompleteness.COMPLETE
+
+
+@pytest.mark.docker_e2e
+def test_d1_shadowed_plugin_blocks_weakening_custom_guard(tmp_path: Path):
+    from code_agent.controller import TaskController
+    from code_agent.llm import LLMClient
+    from code_agent.state import SessionStatus
+
+    _require_docker()
+    workspace = _custom_collector_repo(tmp_path / "probe")
+    (workspace / "safepatch_inventory.py").write_text(_SHADOW_PLUGIN, encoding="utf-8")
+    original_guard = (workspace / "checks.py").read_text(encoding="utf-8")
+    proposal = {
+        "tool": "propose_patch",
+        "args": {
+            "diagnosis": "fix return and weaken guard",
+            "affected_files": ["mod.py", "checks.py"],
+            "unified_diff": (
+                "--- a/mod.py\n+++ b/mod.py\n@@ -1,2 +1,2 @@\n def f():\n"
+                "-    return 1\n+    return 2\n"
+                "--- a/checks.py\n+++ b/checks.py\n@@ -1,2 +1,2 @@\n"
+                " def test_guard():\n-    assert 1 == 1\n+    assert True\n"
+            ),
+            "expected_behavior": "tests pass",
+            "risk_notes": "synthetic",
+            "tests_to_run": ["test_mod.py"],
+        },
+    }
+    session = TaskController(
+        llm=LLMClient(
+            dry_run_script=[
+                proposal,
+                {"tool": "finish", "args": {"reason": "blocked"}},
+            ]
+        ),
+        runner=DockerPytestRunner(),
+        approve=lambda *_: True,
+        session_base=tmp_path / "sessions",
+    ).run(workspace, "fix f")
+    assert session.status is not SessionStatus.SUCCEEDED
+    assert session.attempts_used == 0
+    assert (session.workspace_root / "checks.py").read_text(encoding="utf-8") == original_guard
+    assert "return 1" in (session.workspace_root / "mod.py").read_text(encoding="utf-8")
+
+
+@pytest.mark.docker_e2e
+def test_c1_docker_plugin_records_custom_collected_file(tmp_path: Path):
+    from code_agent.patching.test_collection import InventoryCompleteness
+
+    runner = _require_docker()
+    workspace = tmp_path / "custom_collect"
+    workspace.mkdir()
+    (workspace / "pytest.ini").write_text("[pytest]\npythonpath = .\n", encoding="utf-8")
+    (workspace / "mod.py").write_text("def f():\n    return 1\n", encoding="utf-8")
+    (workspace / "test_mod.py").write_text(
+        "from mod import f\ndef test_f():\n    assert f() == 1\n",
+        encoding="utf-8",
+    )
+    (workspace / "checks.py").write_text(
+        "def test_guard():\n    assert 1 == 1\n", encoding="utf-8"
+    )
+    (workspace / "conftest.py").write_text(
+        "import pytest\n"
+        "def pytest_collect_file(file_path, parent):\n"
+        '    if file_path.name == "checks.py":\n'
+        "        return pytest.Module.from_parent(parent, path=file_path)\n",
+        encoding="utf-8",
+    )
+    result = runner.run_pytest(workspace)
+    assert result.environment_error is None, result.environment_error
+    assert result.exit_code == 0, (result.stdout, result.stderr)
+    combined = result.stdout + "\n" + result.stderr
+    assert "SAFEPATCH_CONTROLLED_PLUGIN_ORIGIN=/opt/safepatch/safepatch_inventory.py" in combined
+    inventory = result.test_inventory
+    assert inventory is not None
+    assert inventory.origin_trusted is False
+    assert inventory.completeness is not InventoryCompleteness.COMPLETE
+
+
+def _standard_tests_repo(root: Path, *, return_value: int, with_init: bool) -> Path:
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "mod.py").write_text(f"def f():\n    return {return_value}\n", encoding="utf-8")
+    tests = root / "tests"
+    tests.mkdir()
+    if with_init:
+        (tests / "__init__.py").write_text("", encoding="utf-8")
+    (tests / "test_mod.py").write_text(
+        "from mod import f\ndef test_f():\n    assert f() == 2\n",
+        encoding="utf-8",
+    )
+    return root
+
+
+@pytest.mark.docker_e2e
+@pytest.mark.parametrize("with_init", [False, True], ids=["no_init", "pkg_init"])
+def test_e1_standard_repo_without_pythonpath_passes(tmp_path: Path, with_init: bool):
+    runner = _require_docker()
+    workspace = _standard_tests_repo(
+        tmp_path / f"simple_{with_init}", return_value=2, with_init=with_init
+    )
+    result = runner.run_pytest(workspace)
+    assert result.environment_error is None, result.environment_error
+    assert result.exit_code == 0, (result.stdout, result.stderr)
+    combined = result.stdout + "\n" + result.stderr
+    assert "No module named 'mod'" not in combined
+    assert "SAFEPATCH_CONTROLLED_PLUGIN_ORIGIN=/opt/safepatch/safepatch_inventory.py" in combined
+
+
+@pytest.mark.docker_e2e
+def test_e1_standard_repo_wrong_return_is_assertion_failure(tmp_path: Path):
+    runner = _require_docker()
+    workspace = _standard_tests_repo(tmp_path / "failing", return_value=1, with_init=False)
+    result = runner.run_pytest(workspace)
+    assert result.environment_error is None, result.environment_error
+    assert result.exit_code == 1, (result.stdout, result.stderr)
+    combined = result.stdout + "\n" + result.stderr
+    assert "assert 1 == 2" in combined or "AssertionError" in combined
+    assert result.error_kind not in {"environment", "timeout"}
+
+
+@pytest.mark.docker_e2e
+def test_e2_pytest_plugins_blocks_weakening_custom_guard(tmp_path: Path):
+    from code_agent.controller import TaskController
+    from code_agent.llm import LLMClient
+    from code_agent.state import SessionStatus
+
+    _require_docker()
+    workspace = tmp_path / "indirect"
+    workspace.mkdir()
+    (workspace / "pytest.ini").write_text("[pytest]\npythonpath = .\n", encoding="utf-8")
+    (workspace / "mod.py").write_text("def f():\n    return 1\n", encoding="utf-8")
+    (workspace / "test_mod.py").write_text(
+        "from mod import f\ndef test_f():\n    assert f() == 2\n",
+        encoding="utf-8",
+    )
+    original_guard = "def test_guard():\n    assert 1 == 1\n"
+    (workspace / "checks.py").write_text(original_guard, encoding="utf-8")
+    (workspace / "conftest.py").write_text('pytest_plugins = ["collector"]\n', encoding="utf-8")
+    (workspace / "collector.py").write_text(
+        "import pytest\n"
+        "def pytest_collect_file(file_path, parent):\n"
+        '    if file_path.name == "checks.py":\n'
+        "        return pytest.Module.from_parent(parent, path=file_path)\n",
+        encoding="utf-8",
+    )
+    proposal = {
+        "tool": "propose_patch",
+        "args": {
+            "diagnosis": "fix return and weaken guard",
+            "affected_files": ["mod.py", "checks.py"],
+            "unified_diff": (
+                "--- a/mod.py\n+++ b/mod.py\n@@ -1,2 +1,2 @@\n def f():\n"
+                "-    return 1\n+    return 2\n"
+                "--- a/checks.py\n+++ b/checks.py\n@@ -1,2 +1,2 @@\n"
+                " def test_guard():\n-    assert 1 == 1\n+    assert True\n"
+            ),
+            "expected_behavior": "tests pass",
+            "risk_notes": "synthetic",
+            "tests_to_run": ["test_mod.py"],
+        },
+    }
+    session = TaskController(
+        llm=LLMClient(dry_run_script=[proposal]),
+        runner=DockerPytestRunner(),
+        approve=lambda *_: True,
+        session_base=tmp_path / "sessions",
+    ).run(workspace, "fix f")
+    assert session.status is SessionStatus.PATCH_NOT_APPLICABLE
+    assert session.stop_reason == "unsupported_pytest_collection"
+    assert session.attempts_used == 0
+    assert (session.workspace_root / "checks.py").read_text(encoding="utf-8") == original_guard
+    assert "return 1" in (session.workspace_root / "mod.py").read_text(encoding="utf-8")
+    assert session.status is not SessionStatus.SUCCEEDED
+
+
+@pytest.mark.docker_e2e
+def test_e2_standard_repo_business_only_fix_still_succeeds(tmp_path: Path):
+    from code_agent.controller import TaskController
+    from code_agent.llm import LLMClient
+    from code_agent.state import SessionStatus
+
+    _require_docker()
+    workspace = _standard_tests_repo(tmp_path / "biz", return_value=1, with_init=False)
+    proposal = {
+        "tool": "propose_patch",
+        "args": {
+            "diagnosis": "return 2",
+            "affected_files": ["mod.py"],
+            "unified_diff": (
+                "--- a/mod.py\n+++ b/mod.py\n@@ -1,2 +1,2 @@\n def f():\n"
+                "-    return 1\n+    return 2\n"
+            ),
+            "expected_behavior": "return 2",
+            "risk_notes": "low",
+            "tests_to_run": ["tests/test_mod.py"],
+        },
+    }
+    session = TaskController(
+        llm=LLMClient(dry_run_script=[proposal]),
+        runner=DockerPytestRunner(),
+        approve=lambda *_: True,
+        session_base=tmp_path / "sessions",
+    ).run(workspace, "fix f")
+    assert session.status is SessionStatus.SUCCEEDED
+    assert session.baseline is not None
+    assert session.baseline.exit_code == 1
+    assert session.attempts
+    post = session.attempts[-1].test_result
+    assert post is not None
+    assert post.exit_code == 0
+    assert "1 passed" in (post.stdout or "")
+    assert "return 2" in (session.workspace_root / "mod.py").read_text(encoding="utf-8")
+
+
+_F12_DUAL = (
+    "--- a/mod.py\n+++ b/mod.py\n@@ -1,2 +1,2 @@\n def f():\n-    return 1\n+    return 2\n"
+    "--- a/checks.py\n+++ b/checks.py\n@@ -1,2 +1,2 @@\n def test_guard():\n"
+    "-    assert 1 == 1\n+    assert True\n"
+)
+
+
+def _f12_weakening_repo(root: Path) -> Path:
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "mod.py").write_text("def f():\n    return 1\n", encoding="utf-8")
+    (root / "test_mod.py").write_text(
+        "from mod import f\ndef test_f():\n    assert f() == 2\n",
+        encoding="utf-8",
+    )
+    (root / "checks.py").write_text("def test_guard():\n    assert 1 == 1\n", encoding="utf-8")
+    return root
+
+
+def _f12_run_dual_patch(tmp_path: Path, workspace: Path):
+    from code_agent.controller import TaskController
+    from code_agent.llm import LLMClient
+    from code_agent.state import SessionStatus
+
+    original_guard = (workspace / "checks.py").read_text(encoding="utf-8")
+    session = TaskController(
+        llm=LLMClient(
+            dry_run_script=[
+                {
+                    "tool": "propose_patch",
+                    "args": {
+                        "diagnosis": "fix return and weaken guard",
+                        "affected_files": ["mod.py", "checks.py"],
+                        "unified_diff": _F12_DUAL,
+                        "expected_behavior": "tests pass",
+                        "risk_notes": "synthetic",
+                        "tests_to_run": ["test_mod.py"],
+                    },
+                }
+            ]
+        ),
+        runner=DockerPytestRunner(),
+        approve=lambda *_: True,
+        session_base=tmp_path / "sessions",
+    ).run(workspace, "fix f")
+    return session, original_guard, SessionStatus
+
+
+@pytest.mark.docker_e2e
+def test_f1_config_precedence_blocks_weakening_checks(tmp_path: Path):
+    _require_docker()
+    workspace = _f12_weakening_repo(tmp_path / "config_precedence")
+    (workspace / "setup.cfg").write_text("[tool:pytest]\naddopts = -q\n", encoding="utf-8")
+    (workspace / "pyproject.toml").write_text(
+        '[tool.pytest.ini_options]\npython_files = ["test_*.py", "checks.py"]\n',
+        encoding="utf-8",
+    )
+    session, original_guard, SessionStatus = _f12_run_dual_patch(tmp_path, workspace)
+    assert session.baseline is not None
+    assert session.baseline.exit_code == 1
+    combined = (session.baseline.stdout or "") + (session.baseline.stderr or "")
+    assert "1 failed, 1 passed" in combined or "1 passed" in combined
+    assert session.status is SessionStatus.PATCH_NOT_APPLICABLE
+    assert session.stop_reason == "unsupported_pytest_collection"
+    assert session.attempts_used == 0
+    assert (session.workspace_root / "checks.py").read_text(encoding="utf-8") == original_guard
+    assert "assert True" not in (session.workspace_root / "checks.py").read_text(encoding="utf-8")
+    assert session.status is not SessionStatus.SUCCEEDED
+
+
+@pytest.mark.docker_e2e
+def test_f2_aliased_imported_hook_blocks_weakening_checks(tmp_path: Path):
+    _require_docker()
+    workspace = _f12_weakening_repo(tmp_path / "imported_hook_alias")
+    helpers = workspace / "helpers"
+    helpers.mkdir()
+    (helpers / "__init__.py").write_text("", encoding="utf-8")
+    (helpers / "hooks.py").write_text(
+        "import pytest\n"
+        "def collect(file_path, parent):\n"
+        '    if file_path.name == "checks.py":\n'
+        "        return pytest.Module.from_parent(parent, path=file_path)\n",
+        encoding="utf-8",
+    )
+    (workspace / "conftest.py").write_text(
+        "from helpers.hooks import collect as pytest_collect_file\n",
+        encoding="utf-8",
+    )
+    session, original_guard, SessionStatus = _f12_run_dual_patch(tmp_path, workspace)
+    assert session.baseline is not None
+    assert session.baseline.exit_code == 1
+    combined = (session.baseline.stdout or "") + (session.baseline.stderr or "")
+    assert "1 failed, 1 passed" in combined or "1 passed" in combined
+    assert session.status is SessionStatus.PATCH_NOT_APPLICABLE
+    assert session.attempts_used == 0
+    assert (session.workspace_root / "checks.py").read_text(encoding="utf-8") == original_guard
+    assert session.status is not SessionStatus.SUCCEEDED
+
+
+@pytest.mark.docker_e2e
+def test_g1_assigned_hook_blocks_weakening_checks(tmp_path: Path):
+    _require_docker()
+    workspace = _f12_weakening_repo(tmp_path / "hook_binding")
+    (workspace / "conftest.py").write_text(
+        "import pytest\n"
+        "def collect(file_path, parent):\n"
+        '    if file_path.name == "checks.py":\n'
+        "        return pytest.Module.from_parent(parent, path=file_path)\n"
+        "pytest_collect_file = collect\n",
+        encoding="utf-8",
+    )
+    session, original_guard, SessionStatus = _f12_run_dual_patch(tmp_path, workspace)
+    assert session.baseline is not None
+    assert session.baseline.exit_code == 1
+    combined = (session.baseline.stdout or "") + (session.baseline.stderr or "")
+    assert "1 failed, 1 passed" in combined or "1 passed" in combined
+    assert session.status is SessionStatus.PATCH_NOT_APPLICABLE
+    assert session.stop_reason == "unsupported_pytest_collection"
+    assert session.attempts_used == 0
+    assert (session.workspace_root / "checks.py").read_text(encoding="utf-8") == original_guard
+    assert "assert True" not in (session.workspace_root / "checks.py").read_text(encoding="utf-8")
+    assert "return 1" in (session.workspace_root / "mod.py").read_text(encoding="utf-8")
+    assert session.status is not SessionStatus.SUCCEEDED
+
+
+@pytest.mark.docker_e2e
+def test_g1_fixture_only_conftest_is_unsupported(tmp_path: Path):
+    from code_agent.controller import TaskController
+    from code_agent.llm import LLMClient
+    from code_agent.state import SessionStatus
+
+    _require_docker()
+    workspace = _standard_tests_repo(tmp_path / "fixture_only", return_value=1, with_init=False)
+    (workspace / "tests" / "conftest.py").write_text(
+        "import pytest\n@pytest.fixture\ndef value():\n    return 1\n",
+        encoding="utf-8",
+    )
+    proposal = {
+        "tool": "propose_patch",
+        "args": {
+            "diagnosis": "return 2",
+            "affected_files": ["mod.py"],
+            "unified_diff": (
+                "--- a/mod.py\n+++ b/mod.py\n@@ -1,2 +1,2 @@\n def f():\n"
+                "-    return 1\n+    return 2\n"
+            ),
+            "expected_behavior": "return 2",
+            "risk_notes": "low",
+            "tests_to_run": ["tests/test_mod.py"],
+        },
+    }
+    original_mod = (workspace / "mod.py").read_text(encoding="utf-8")
+    session = TaskController(
+        llm=LLMClient(dry_run_script=[proposal]),
+        runner=DockerPytestRunner(),
+        approve=lambda *_: True,
+        session_base=tmp_path / "sessions",
+    ).run(workspace, "fix f")
+    assert session.status is SessionStatus.PATCH_NOT_APPLICABLE
+    assert session.stop_reason == "unsupported_pytest_collection"
+    assert session.attempts_used == 0
+    assert session.status is not SessionStatus.SUCCEEDED
+    assert (session.workspace_root / "mod.py").read_text(encoding="utf-8") == original_mod
+    assert any("executable conftest" in item for item in session.pytest_protection_reasons)
+
+
+_H1_REGISTER = (
+    "globals().__setitem__('pytest_collect_file', lambda file_path, parent: "
+    "pytest.Module.from_parent(parent, path=file_path) "
+    "if file_path.name == 'checks.py' else None)"
+)
+_H1_VARIANTS = {
+    "default_argument": (
+        "import pytest\n@pytest.fixture\ndef value(_=" + _H1_REGISTER + "):\n    return 1\n"
+    ),
+    "decorator_argument": (
+        "import pytest\n@pytest.fixture(scope=(" + _H1_REGISTER + ', "function")[1])\n'
+        "def value():\n    return 1\n"
+    ),
+    "return_annotation": (
+        "import pytest\n@pytest.fixture\ndef value() -> " + _H1_REGISTER + ":\n    return 1\n"
+    ),
+}
+
+
+@pytest.mark.docker_e2e
+@pytest.mark.parametrize("name", list(_H1_VARIANTS))
+def test_h1_definition_expressions_block_weakening_checks(tmp_path: Path, name: str):
+    _require_docker()
+    workspace = _f12_weakening_repo(tmp_path / name)
+    (workspace / "conftest.py").write_text(_H1_VARIANTS[name], encoding="utf-8")
+    session, original_guard, SessionStatus = _f12_run_dual_patch(tmp_path, workspace)
+    assert session.baseline is not None
+    assert session.baseline.exit_code == 1
+    combined = (session.baseline.stdout or "") + (session.baseline.stderr or "")
+    assert "1 failed, 1 passed" in combined or "1 passed" in combined
+    assert session.status is SessionStatus.PATCH_NOT_APPLICABLE
+    assert session.stop_reason == "unsupported_pytest_collection"
+    assert session.attempts_used == 0
+    assert (session.workspace_root / "checks.py").read_text(encoding="utf-8") == original_guard
+    assert "assert True" not in (session.workspace_root / "checks.py").read_text(encoding="utf-8")
+    assert "return 1" in (session.workspace_root / "mod.py").read_text(encoding="utf-8")
+    assert session.status is not SessionStatus.SUCCEEDED
+    assert any("executable conftest" in item for item in session.pytest_protection_reasons)
+
+
+@pytest.mark.docker_e2e
+@pytest.mark.parametrize(
+    "conftest",
+    ["", "# comment only\n", '"""docs"""\npass\n'],
+    ids=["empty", "comment", "docstring_pass"],
+)
+def test_h1_inert_conftest_business_fix_succeeds(tmp_path: Path, conftest: str):
+    from code_agent.controller import TaskController
+    from code_agent.llm import LLMClient
+    from code_agent.state import SessionStatus
+
+    _require_docker()
+    workspace = _standard_tests_repo(tmp_path / "inert", return_value=1, with_init=False)
+    (workspace / "tests" / "conftest.py").write_text(conftest, encoding="utf-8")
+    proposal = {
+        "tool": "propose_patch",
+        "args": {
+            "diagnosis": "return 2",
+            "affected_files": ["mod.py"],
+            "unified_diff": (
+                "--- a/mod.py\n+++ b/mod.py\n@@ -1,2 +1,2 @@\n def f():\n"
+                "-    return 1\n+    return 2\n"
+            ),
+            "expected_behavior": "return 2",
+            "risk_notes": "low",
+            "tests_to_run": ["tests/test_mod.py"],
+        },
+    }
+    session = TaskController(
+        llm=LLMClient(dry_run_script=[proposal]),
+        runner=DockerPytestRunner(),
+        approve=lambda *_: True,
+        session_base=tmp_path / "sessions",
+    ).run(workspace, "fix f")
+    assert session.status is SessionStatus.SUCCEEDED
+    assert session.baseline is not None
+    assert session.baseline.exit_code == 1
+    assert session.attempts
+    post = session.attempts[-1].test_result
+    assert post is not None
+    assert post.exit_code == 0
+    assert "1 passed" in (post.stdout or "")
+    assert "return 2" in (session.workspace_root / "mod.py").read_text(encoding="utf-8")

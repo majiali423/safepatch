@@ -3,9 +3,10 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any
 
+from code_agent.evidence import EvidenceItem
 from code_agent.repository.workspace import WorkspaceError
 from code_agent.state import AnalysisPhase, TaskSession
-from code_agent.tools.read_file import MAX_LINES_PER_READ, read_file
+from code_agent.tools.read_file import MAX_LINES_PER_READ, read_file_result
 
 
 class EvidenceErrorKind(str, Enum):
@@ -24,21 +25,63 @@ def normalized_path(path: object) -> str:
     return str(path).replace("\\", "/").removeprefix("./")
 
 
+def record_read_result(session: TaskSession, result: Any, *, source: str) -> None:
+    if getattr(result, "empty", False):
+        return
+    start = int(result.start_line)
+    end = int(result.end_line)
+    if end < start:
+        return
+    session.evidence.record(
+        EvidenceItem(
+            path=normalized_path(result.path),
+            revision=str(result.revision),
+            start_line=start,
+            end_line=end,
+            content=result.content,
+            source=source,
+            total_lines=int(result.total_lines),
+            complete=not bool(getattr(result, "truncated", False)),
+        )
+    )
+
+
 def record_successful_read_range(
     session: TaskSession,
     arguments: dict[str, Any],
+    *,
+    actual_start: int | None = None,
+    actual_end: int | None = None,
+    revision: str | None = None,
+    content: str = "",
+    total_lines: int = 0,
+    source: str = "read_file",
 ) -> None:
     path = normalized_path(arguments.get("path", ""))
     try:
-        start_line = int(arguments.get("start_line", 1))
-        raw_end = arguments.get("end_line")
-        end_line = int(raw_end) if raw_end is not None else 2**31 - 1
+        start_line = int(
+            actual_start if actual_start is not None else arguments.get("start_line", 1)
+        )
+        if actual_end is not None:
+            end_line = int(actual_end)
+        else:
+            raw_end = arguments.get("end_line")
+            end_line = int(raw_end) if raw_end is not None else start_line
     except (TypeError, ValueError):
         return
-    if path and start_line >= 1 and end_line >= start_line:
-        session.successful_read_ranges.setdefault(path, []).append(
-            (start_line, end_line)
+    if not path or start_line < 1 or end_line < start_line:
+        return
+    session.evidence.record(
+        EvidenceItem(
+            path=path,
+            revision=revision or "",
+            start_line=start_line,
+            end_line=end_line,
+            content=content,
+            source=source,
+            total_lines=total_lines,
         )
+    )
 
 
 def execute_request_evidence(
@@ -92,17 +135,8 @@ def execute_request_evidence(
             kind=EvidenceErrorKind.PARAMETER,
         )
 
-    for seen_start, seen_end in session.successful_read_ranges.get(path, []):
-        if start_line >= seen_start and end_line <= seen_end:
-            raise EvidenceRequestError(
-                "EVIDENCE_NO_PROGRESS: The requested range is already fully covered "
-                "by an earlier successful read. Use existing evidence, request a "
-                "different missing range, propose a change, or finish.",
-                kind=EvidenceErrorKind.NO_PROGRESS,
-            )
-
     try:
-        result = read_file(
+        result = read_file_result(
             session.workspace_root,
             path,
             start_line,
@@ -114,12 +148,20 @@ def execute_request_evidence(
             kind=EvidenceErrorKind.PARAMETER,
         ) from exc
 
+    if session.evidence.covers(path, start_line, end_line, result.revision):
+        raise EvidenceRequestError(
+            "EVIDENCE_NO_PROGRESS: The requested range is already fully covered "
+            "by an earlier successful read. Use existing evidence, request a "
+            "different missing range, propose a change, or finish.",
+            kind=EvidenceErrorKind.NO_PROGRESS,
+        )
+
     session.evidence_requests_used += 1
     session.read_actions_used += 1
-    record_successful_read_range(session, arguments)
+    record_read_result(session, result, source="request_evidence")
     remaining = session.max_evidence_requests - session.evidence_requests_used
     return (
-        f"{result}\n\n"
+        f"{result.format_text()}\n\n"
         "EVIDENCE_ACCEPTED: Return to SYNTHESIZE. Do not resume free exploration.\n"
         f"unanswered_requirement={unanswered}\n"
         f"evidence_requests_remaining={remaining}\n"

@@ -20,6 +20,7 @@ examples/eval_tasks/results/
 examples/eval_tasks/**/latest/
 examples/llm_benchmark/results/
 examples/real_bug_benchmark/results/
+examples/agent_experiments/results/
 /.codex-*/
 
 # Local scratch / personal notes (never commit)
@@ -40,3 +41,14 @@ htmlcov/
 *.log
 .DS_Store
 Thumbs.db
+
+# Local review output and disposable test/build environments
+/output/
+/.pytest_tmp*/
+/.tmp-*/
+/Usersliliproject3.pytest_tmp/
+/.docx-qa/
+/tmp/
+/.packaging-test-artifacts/
+/.smoke-venv/
+/.smoke-work/

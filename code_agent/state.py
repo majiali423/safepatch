@@ -7,6 +7,9 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from code_agent.evidence import EvidenceStore
+from code_agent.patching.test_collection import TestInventoryReport
+
 if TYPE_CHECKING:
     from code_agent.patching.validator import ValidationResult
 
@@ -72,10 +75,20 @@ class TestResult:
     # Distinguishes assertion/test failures (None) from infra problems.
     # "environment" = docker/pytest missing; "timeout" = wall-clock limit.
     error_kind: str | None = None
+    collected_test_files: list[str] | None = None
+    test_inventory: TestInventoryReport | None = None
 
     @property
     def passed(self) -> bool:
         return self.environment_error is None and self.exit_code == 0
+
+    @property
+    def has_valid_failure_oracle(self) -> bool:
+        if self.environment_error or self.passed:
+            return False
+        if self.error_kind in {"environment", "runner", "timeout"}:
+            return False
+        return self.exit_code == 1
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -87,6 +100,10 @@ class TestResult:
             "traceback_summary": self.traceback_summary,
             "environment_error": self.environment_error,
             "error_kind": self.error_kind,
+            "collected_test_files": self.collected_test_files,
+            "test_inventory": None
+            if self.test_inventory is None
+            else self.test_inventory.to_dict(),
             "passed": self.passed,
         }
 
@@ -236,6 +253,8 @@ class SessionObservability:
     model_name: str = ""
     tool_calling_protocol: str = "custom_json"
     temperature: float | None = None
+    logical_calls: int = 0
+    transport_attempts: int = 0
 
     def start(
         self,
@@ -322,6 +341,8 @@ class SessionObservability:
                 "max_patch_regeneration_retries": max_patch_regeneration_retries,
                 "max_repair_attempts": max_repair_attempts,
                 "calls": self.model_calls,
+                "logical_calls": self.logical_calls,
+                "transport_attempts": self.transport_attempts,
                 "usage": self.usage_to_dict(),
             },
             "tools": {
@@ -377,10 +398,7 @@ class TaskSession:
     total_no_progress_actions: int = 0
     hard_policy_violations: int = 0
     required_recovery_reads_used: int = 0
-    successful_read_ranges: dict[str, list[tuple[int, int]]] = field(
-        default_factory=dict,
-        repr=False,
-    )
+    evidence: EvidenceStore = field(default_factory=EvidenceStore)
     repo_map_text: str = ""
     repo_map_data: dict[str, Any] = field(default_factory=dict)
     baseline: TestResult | None = None
@@ -408,7 +426,13 @@ class TaskSession:
     required_reads: dict[str, tuple[int, int]] = field(default_factory=dict)
     consecutive_read_budget_violations: int = 0
     total_read_budget_violations: int = 0
+    pytest_scope_unsupported: bool = False
+    pytest_protection_reasons: list[str] = field(default_factory=list)
     observability: SessionObservability = field(default_factory=SessionObservability)
+
+    @property
+    def successful_read_ranges(self) -> dict[str, list[tuple[int, int]]]:
+        return self.evidence.ranges_by_path()
 
     def to_summary(self) -> dict[str, Any]:
         baseline_passed = bool(self.baseline and self.baseline.passed)

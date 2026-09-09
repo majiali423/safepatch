@@ -9,7 +9,7 @@ from enum import Enum
 from typing import Any, Protocol
 
 from code_agent.state import TokenUsage
-from code_agent.tracing.recorder import _redact
+from code_agent.tracing.sanitize import sanitize as _redact
 
 SYSTEM_PROMPT = """You are a careful code-repair agent for a small local Python repository.
 You may only use these tools via a single JSON object per turn:
@@ -61,6 +61,8 @@ JSON formats:
 
 RAW_PREVIEW_MAX = 2000
 DEFAULT_TEMPERATURE = 0.1
+DEFAULT_REQUEST_TIMEOUT_SECONDS = 60.0
+DEFAULT_MAX_OUTPUT_TOKENS = 4096
 TOOL_CALLING_PROTOCOL = "custom_json"
 
 FORMAT_RETRY_HINT = (
@@ -160,6 +162,9 @@ class LLMClient:
         dry_run_script: list[Any] | None = None,
         temperature: float = DEFAULT_TEMPERATURE,
         on_provider_invocation: Callable[[], None] | None = None,
+        request_timeout_seconds: float = DEFAULT_REQUEST_TIMEOUT_SECONDS,
+        max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS,
+        max_transport_retries: int = 0,
     ) -> None:
         self.model = model or os.getenv("SAFEPATCH_MODEL", "gpt-4o-mini")
         self.api_key = api_key or os.getenv("OPENAI_API_KEY") or os.getenv(
@@ -169,6 +174,11 @@ class LLMClient:
             "SAFEPATCH_BASE_URL"
         )
         self.temperature = temperature
+        self.request_timeout_seconds = request_timeout_seconds
+        self.max_output_tokens = max_output_tokens
+        self.max_transport_retries = max_transport_retries
+        self.logical_calls = 0
+        self.transport_attempts = 0
         self._dry_run_script = list(dry_run_script or [])
         self._dry_idx = 0
         self._client = None
@@ -190,6 +200,7 @@ class LLMClient:
             self.on_provider_invocation()
 
     def complete(self, messages: list[dict[str, str]]) -> LLMResponse:
+        self.logical_calls += 1
         raw, usage = self._fetch_raw(messages)
         try:
             parsed = parse_tool_call(raw)
@@ -205,6 +216,7 @@ class LLMClient:
     def _fetch_raw(self, messages: list[dict[str, str]]) -> tuple[str, TokenUsage]:
         if self._dry_run_script:
             # Dry-run is the test double for a provider invocation.
+            self.transport_attempts += 1
             self._emit_provider_invocation()
             if self._dry_idx >= len(self._dry_run_script):
                 raise LLMError(
@@ -232,17 +244,29 @@ class LLMClient:
             )
 
         self._emit_provider_invocation()
-        try:
-            client = self._get_client()
-            response = client.chat.completions.create(
-                model=self.model,
-                temperature=self.temperature,
-                messages=[{"role": "system", "content": SYSTEM_PROMPT}, *messages],
-            )
-        except LLMError as exc:
-            raise LLMError(str(exc), provider_invoked=True) from exc
-        except Exception as exc:
-            raise LLMError(str(exc), provider_invoked=True) from exc
+        last_error: Exception | None = None
+        response = None
+        attempts = max(self.max_transport_retries, 0) + 1
+        for _attempt in range(attempts):
+            self.transport_attempts += 1
+            try:
+                client = self._get_client()
+                response = client.chat.completions.create(
+                    model=self.model,
+                    temperature=self.temperature,
+                    max_tokens=self.max_output_tokens,
+                    messages=[{"role": "system", "content": SYSTEM_PROMPT}, *messages],
+                    timeout=self.request_timeout_seconds,
+                )
+                last_error = None
+                break
+            except LLMError as exc:
+                last_error = LLMError(str(exc), provider_invoked=True)
+            except Exception as exc:
+                last_error = LLMError(str(exc), provider_invoked=True)
+        if response is None:
+            assert last_error is not None
+            raise last_error
 
         usage = normalize_token_usage(
             getattr(response, "usage", None), source="provider"
@@ -253,7 +277,11 @@ class LLMClient:
         if self._client is None:
             from openai import OpenAI
 
-            kwargs: dict[str, Any] = {"api_key": self.api_key}
+            kwargs: dict[str, Any] = {
+                "api_key": self.api_key,
+                "timeout": self.request_timeout_seconds,
+                "max_retries": 0,
+            }
             if self.base_url:
                 kwargs["base_url"] = self.base_url
             self._client = OpenAI(**kwargs)
