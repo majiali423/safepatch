@@ -1,0 +1,1 @@
+Unsupported pytest configuration; SafePatch will not modify this repository: conftest.py contains Import; executable conftest is outside the automatic-repair subset (fixtures are not auto-repaired); conftest.py contains FunctionDef; executable conftest is outside the automatic-repair subset (fixtures are not auto-repaired); fail-closed: treat every Python file as a test

@@ -1,0 +1,17 @@
+{
+  "status": "ERROR",
+  "stop_reason": "cancelled",
+  "attempts_used": 0,
+  "event_order": [
+    "session_created",
+    "repository_imported",
+    "repo_map_generated",
+    "test_files_collected",
+    "baseline_test_finished",
+    "test_files_collected",
+    "model_request",
+    "session_finished"
+  ],
+  "final_diff": "",
+  "last_error": "SESSION_CANCELLED: interrupted by the operator"
+}

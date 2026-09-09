@@ -208,6 +208,24 @@ def test_pytest_timeout_returns_timeout_kind(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(runner, "_resolve_image", lambda: "safepatch-pytest:local")
 
     class FakeProc:
+        returncode = -1
+        stdout = None
+        stderr = None
+
+        def __init__(self):
+            self.stdout = self._Empty()
+            self.stderr = self._Empty()
+
+        class _Empty:
+            def read(self, _n=None):
+                return b""
+
+            def close(self):
+                return None
+
+        def wait(self, timeout=None):
+            raise subprocess.TimeoutExpired(cmd=["docker"], timeout=timeout or 120)
+
         def communicate(self, timeout=None):
             raise subprocess.TimeoutExpired(cmd=["docker"], timeout=timeout or 120)
 

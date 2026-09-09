@@ -1,75 +1,38 @@
-# SafePatch: 5-Minute Engineering Review
+# SafePatch: five-minute engineering review
 
-## What it is
+SafePatch repairs small Python repositories through a controlled model/tool
+loop. The engineering focus is on reliable state transitions, bounded context,
+reviewable patches and reproducible verification.
 
-SafePatch is a deliberately narrow code-repair Agent for small, local Python
-repositories that use pytest. Its purpose is not to make broad autonomous
-software-engineering claims. It demonstrates a controlled repair path in which
-an LLM can inspect code, propose a small patch, and receive verification only
-through fixed policy and runtime gates.
+## What to inspect
 
-## The engineering question
+| Question | Implementation or evidence |
+| --- | --- |
+| Who owns each phase? | [Architecture](ARCHITECTURE.md): controller, analysis loop, gate, executor and finalizer |
+| What happens when context is stale? | [Patch recovery](PATCH_RECOVERY.md): required reads and bounded regeneration |
+| Can approval become stale? | Patch and working-tree hashes are checked again before apply |
+| Can tests contaminate the working copy? | Docker executes a disposable copy; [runtime tests](../tests/test_docker_e2e_negative.py) exercise the real daemon |
+| How is behavior preserved during refactoring? | [Session replay](ANALYSIS_LOOP.md) and negative tests for its comparator |
+| Do passing tests prove the task was solved? | [Failure case study](FAILURE_CASE_STUDY.md) compares public and hidden outcomes |
 
-The project addresses a practical risk: a plausible LLM patch can still touch
-unrelated files, weaken tests, fail to apply after review, contaminate its
-working tree during testing, or leave runtime resources behind. SafePatch makes
-those failure modes visible and rejects them where possible.
+## Suggested route
 
-## Control path
+1. Run the [deterministic demo](DEMO.md), which needs Docker but no API key.
+2. Follow one model proposal through [AnalysisLoop](ANALYSIS_LOOP.md), approval
+   and execution.
+3. Inspect [three concrete cases](INTERVIEW_DEMOS.md): success, stale-context
+   recovery and a hidden-test false positive.
+4. Run the [development checks](DEVELOPMENT.md) and [evidence verifiers](EVALUATION.md).
 
-```text
-read-only inspection
-  -> policy validation
-  -> exact in-memory preflight
-  -> hash-bound human approval
-  -> exact apply with rollback
-  -> Docker pytest on a disposable copy
-  -> trace, diff, logs, and summary
-```
+The published 21-run bundle records 17/21 hidden-test successes. This is a
+small historical evaluation, not a claim about current accuracy on arbitrary
+repositories. See [Evaluation](EVALUATION.md) for the separate extension and
+preflight experiments.
 
-The model has no shell, browser, network, or direct-write tool. The product
-only permits small Python changes, blocks dependency/configuration edits, and
-defaults to rejecting modifications to existing tests.
+## Scope to discuss
 
-## Evidence to inspect
-
-| Evidence | What it demonstrates |
-|---|---|
-| [Demo](DEMO.md) | A deterministic dry-run repair without an API key |
-| [Architecture](ARCHITECTURE.md) | Module boundaries, state transitions, and trade-offs |
-| `tests/` | Patch-path safety, approval binding, rollback, test integrity, hidden-eval isolation, and runtime cleanup |
-| [Release Checklist](RELEASE_CHECKLIST.md) | Reproducible gates for a specific candidate commit |
-| `examples/real_bug_benchmark/` | Frozen BugsInPy-derived task protocol and auditable model-evaluation reports |
-| `examples/llm_benchmark/` | Separate micro-benchmark and replay evidence |
-
-The current deterministic suite contains 259 collected tests. On this review
-working tree it completed as **245 passed, 14 skipped**; skipped cases require
-Docker or host capabilities not available in the execution environment.
-
-Real-bug evidence spans two frozen batches: the historical 7-task batch had
-17/21 hidden/overall passes, and the later 3-task extension batch had 9/9.
-The descriptive aggregate is **26/30 (86.7%)** hidden/overall passes across
-10 environment-accepted tasks. It is useful engineering evidence, not a claim
-of general production accuracy or a controlled version-to-version comparison;
-see [Extension Pilot Report](../examples/real_bug_benchmark/EXTENSION_PILOT_REPORT.md).
-The separate preflight comparison observed 11/14 versus 9/14 final successes,
-but no naturally occurring preflight rejection, so it is explicitly not
-presented as causal proof.
-
-## Suggested review route
-
-1. Read the [README](../README.md) for scope and safety limits.
-2. Run the [dry-run demo](DEMO.md) or inspect its frozen script.
-3. Follow the control path in [Architecture](ARCHITECTURE.md).
-4. Inspect `workspace.py`, `patching/`, and `runtime/docker_pytest.py` for the
-   key enforcement points.
-5. Run the commands in [Release Checklist](RELEASE_CHECKLIST.md).
-
-## Explicit limits
-
-- Supports only small local Python + pytest repositories.
-- Docker isolation is defense in depth, not a complete security sandbox.
-- A passing public test suite is not treated as proof of business correctness.
-- Human approval is required unless the operator explicitly passes `--yes`.
-- Benchmark and model results are bounded by their frozen task sets, model,
-  dates, and environment; they are not current capability guarantees.
+The current automatic-repair path supports a [restricted pytest subset](PYTEST_SUPPORT.md).
+Executable conftest, including normal fixtures, is excluded. The model has no
+shell or direct-write tool; human approval is the default. Docker adds isolation
+but is not a complete security sandbox. These choices keep the supported
+workflow explicit and testable.

@@ -1,0 +1,15 @@
+[
+  "session_created",
+  "repository_imported",
+  "repo_map_generated",
+  "test_files_collected",
+  "baseline_test_finished",
+  "test_files_collected",
+  "model_request",
+  "model_response",
+  "patch_proposed",
+  "patch_preflight_started",
+  "patch_preflight_succeeded",
+  "approval_decision",
+  "session_finished"
+]

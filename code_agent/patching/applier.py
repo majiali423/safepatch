@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import shutil
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -115,12 +117,14 @@ def apply_proposal(
     *,
     allow_test_changes: bool = False,
     allow_new_tests: bool = True,
+    collected_test_files: set[str] | None = None,
 ) -> ApplyResult:
     validation = validate_proposal(
         proposal,
         workspace_root,
         allow_test_changes=allow_test_changes,
         allow_new_tests=allow_new_tests,
+        collected_test_files=collected_test_files,
     )
     if not validation.ok:
         return ApplyResult(
@@ -131,9 +135,11 @@ def apply_proposal(
             rollback_succeeded=True,  # nothing written
         )
 
-    # Backup touched existing files for rollback
+    # Backup touched existing files for rollback. Register create intent before write.
     backups: dict[Path, str | None] = {}
     created: list[Path] = []
+    created_dirs: list[Path] = []
+    pre_state: dict[Path, str | None] = {}
     current_file: str | None = None
     relocations: list[dict[str, int | str]] = []
 
@@ -171,13 +177,15 @@ def apply_proposal(
                         f"Refusing to overwrite existing file: {file_path}"
                     )
                 content = content_from_new_file_diff(body)
-                target.parent.mkdir(parents=True, exist_ok=True)
-                _write_text_raw(target, content)
+                pre_state[target] = None
                 created.append(target)
+                _ensure_parents(target, workspace_root.resolve(), created_dirs)
+                _write_text_raw(target, content)
             else:
                 if not target.exists():
                     raise RuntimeError(f"Missing file for patch: {file_path}")
                 original = _read_text_raw(target)
+                pre_state[target] = original
                 backups[target] = original
                 file_relocations: list[dict[str, int]] = []
                 patched = apply_hunks_to_text(
@@ -194,7 +202,7 @@ def apply_proposal(
 
         return ApplyResult(ok=True, files=validation.files, relocations=relocations)
     except Exception as exc:  # noqa: BLE001
-        rollback_ok = _safe_rollback(backups, created)
+        rollback_ok = _safe_rollback(backups, created, created_dirs, pre_state)
         kind, target, line_no = _classify_exception(exc, current_file)
         return ApplyResult(
             ok=False,
@@ -225,30 +233,107 @@ def _read_text_raw(path: Path) -> str:
 
 
 def _write_text_raw(path: Path, content: str) -> None:
-    """Write text without newline translation."""
-    with path.open("w", encoding="utf-8", newline="") as fh:
-        fh.write(content)
+    """Write text without newline translation.
+
+    Uses an exclusively created same-directory temp file plus ``os.replace``.
+    Existing sibling files, including leftover ``*.safepatch.tmp`` names, are
+    left untouched. Only the temp file created by this call is cleaned up.
+    """
+    original_mode = path.stat().st_mode if path.exists() else None
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.safepatch.",
+        suffix=".tmp",
+        dir=str(path.parent),
+    )
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as fh:
+            fh.write(content)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+        if original_mode is not None:
+            try:
+                os.chmod(path, original_mode)
+            except OSError:
+                pass
+    except Exception:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
 
 
-def _rollback(backups: dict[Path, str | None], created: list[Path]) -> None:
+def _ensure_parents(
+    path: Path, workspace_root: Path, created: list[Path] | None = None
+) -> list[Path]:
+    created = created if created is not None else []
+    missing: list[Path] = []
+    cursor = path.parent
+    while cursor != workspace_root and not cursor.exists():
+        missing.append(cursor)
+        cursor = cursor.parent
+        if len(cursor.parts) < len(workspace_root.parts):
+            break
+    for directory in reversed(missing):
+        directory.mkdir(parents=False, exist_ok=True)
+        created.append(directory)
+    return created
+
+
+def _rollback(
+    backups: dict[Path, str | None],
+    created: list[Path],
+    created_dirs: list[Path] | None = None,
+) -> None:
+    errors: list[BaseException] = []
     for path, content in backups.items():
-        if content is None:
+        try:
+            if content is None:
+                if path.exists():
+                    path.unlink()
+            else:
+                _write_text_raw(path, content)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+    for path in created:
+        try:
             if path.exists():
                 path.unlink()
-        else:
-            _write_text_raw(path, content)
-    for path in created:
-        if path.exists():
-            path.unlink()
-            # clean empty parents lightly
-            parent = path.parent
-            if parent.exists() and not any(parent.iterdir()):
-                shutil.rmtree(parent, ignore_errors=True)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+    for directory in reversed(created_dirs or []):
+        try:
+            if directory.exists() and directory.is_dir() and not any(directory.iterdir()):
+                shutil.rmtree(directory, ignore_errors=True)
+        except Exception as exc:  # noqa: BLE001
+            errors.append(exc)
+    if errors:
+        raise errors[0]
 
 
-def _safe_rollback(backups: dict[Path, str | None], created: list[Path]) -> bool:
+def _snapshot_matches(pre_state: dict[Path, str | None]) -> bool:
+    for path, content in pre_state.items():
+        if content is None:
+            if path.exists():
+                return False
+            continue
+        if not path.exists() or _read_text_raw(path) != content:
+            return False
+    return True
+
+
+def _safe_rollback(
+    backups: dict[Path, str | None],
+    created: list[Path],
+    created_dirs: list[Path] | None = None,
+    pre_state: dict[Path, str | None] | None = None,
+) -> bool:
     try:
-        _rollback(backups, created)
-        return True
+        _rollback(backups, created, created_dirs)
     except Exception:  # noqa: BLE001
         return False
+    if pre_state is not None and not _snapshot_matches(pre_state):
+        return False
+    return True

@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from code_agent.runtime.docker_config import DockerRunConfig
-from code_agent.runtime.docker_pytest import DockerPytestRunner
+from code_agent.runtime.docker_pytest import (
+    CONTROLLED_BOOTSTRAP,
+    DockerPytestRunner,
+    attach_inventory_plugin,
+)
 
 
 def test_docker_run_config_to_dict_and_cmd_are_same_source():
@@ -73,3 +77,21 @@ def test_runner_make_run_config_matches_build_cmd():
     assert cfg.image in cmd
     assert cfg.timeout_seconds == 120
     assert cfg.container_name is None
+
+
+def test_runner_injects_inventory_plugin_without_changing_config_payload():
+    cfg = DockerRunConfig(image="safepatch-pytest:local")
+    payload = cfg.to_dict()
+    cmd = attach_inventory_plugin(cfg.build_docker_cmd("/work/copy"), cfg)
+    assert payload["pytest_argv"] == [
+        "python",
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+    ]
+    assert cmd[-2:] == ["-p", "no:cacheprovider"]
+    assert CONTROLLED_BOOTSTRAP in cmd
+    assert not any(item.startswith("PYTHONPATH=") for item in cmd)
+    assert "safepatch_inventory" not in cmd

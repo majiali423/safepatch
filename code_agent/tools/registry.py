@@ -8,10 +8,10 @@ from typing import Any, Callable
 from code_agent.repository.git_diff import current_diff_from_snapshot
 from code_agent.state import AnalysisPhase, TaskSession
 from code_agent.tools.list_tree import list_tree
-from code_agent.tools.read_file import read_file
+from code_agent.tools.read_file import read_file_result
 from code_agent.tools.request_evidence import (
     normalized_path,
-    record_successful_read_range,
+    record_read_result,
 )
 from code_agent.tools.search_symbol import search_symbol
 from code_agent.tools.search_text import search_text
@@ -36,6 +36,10 @@ READ_BUDGET_WARNING_THRESHOLD = 3
 
 
 READ_TOOLS = {"list_tree", "read_file", "search_text", "search_symbol", "get_repo_map"}
+AVAILABLE_TOOLS = (
+    "list_tree", "read_file", "search_text", "search_symbol", "get_repo_map",
+    "get_current_diff", "request_evidence", "propose_patch", "propose_edit", "finish",
+)
 
 
 def _budget_feedback(session: TaskSession) -> str:
@@ -77,18 +81,7 @@ class ToolRegistry:
     snapshot_root: Path
 
     def available_tools(self) -> list[str]:
-        return [
-            "list_tree",
-            "read_file",
-            "search_text",
-            "search_symbol",
-            "get_repo_map",
-            "get_current_diff",
-            "request_evidence",
-            "propose_patch",
-            "propose_edit",
-            "finish",
-        ]
+        return list(AVAILABLE_TOOLS)
 
 
 def execute_tool(
@@ -130,7 +123,7 @@ def execute_tool(
 
     handlers: dict[str, Callable[[], str]] = {
         "list_tree": lambda: list_tree(root, str(arguments.get("path", "."))),
-        "read_file": lambda: read_file(
+        "read_file": lambda: read_file_result(
             root,
             str(arguments.get("path", "")),
             int(arguments.get("start_line", 1)),
@@ -152,7 +145,8 @@ def execute_tool(
             result = handlers[name]()
             if name in READ_TOOLS:
                 if name == "read_file":
-                    record_successful_read_range(session, arguments)
+                    record_read_result(session, result, source="read_file")
+                    result = result.format_text()
                 result = f"{result}\n\n{_budget_feedback(session)}"
             return result, False
         except Exception as exc:  # noqa: BLE001 - surface tool errors to model

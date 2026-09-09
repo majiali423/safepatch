@@ -33,12 +33,23 @@ class TestIntegrityResult:
     high_risk: bool = False
 
 
-def is_test_path(path: str) -> bool:
+def is_pytest_test_module_name(name: str) -> bool:
+    """Match pytest's default python_files: test_*.py and *_test.py."""
+    return name.endswith(".py") and (
+        name.startswith("test_") or name.endswith("_test.py")
+    )
+
+
+def is_test_path(path: str, collected_test_files: set[str] | None = None) -> bool:
     norm = path.replace("\\", "/")
     name = Path(norm).name
+    if collected_test_files is not None:
+        collected = {item.replace("\\", "/").removeprefix("./") for item in collected_test_files}
+        if norm in collected or name in collected:
+            return True
     if name == "conftest.py":
         return True
-    if name.startswith("test_") and name.endswith(".py"):
+    if is_pytest_test_module_name(name):
         return True
     if "/tests/" in f"/{norm}" or norm.startswith("tests/"):
         if name.endswith(".py"):
@@ -78,17 +89,18 @@ def check_test_integrity(
     unified_diff: str,
     allow_test_changes: bool,
     allow_new_tests: bool,
+    collected_test_files: set[str] | None = None,
 ) -> TestIntegrityResult:
-    # Lazy import avoids circular dependency with applier → validator → here.
-    from code_agent.patching.applier import _split_file_diffs
+    from code_agent.patching.hunk_engine import split_file_diffs
 
     result = TestIntegrityResult()
-    bodies = {path: body for path, body in _split_file_diffs(unified_diff)}
+    bodies = {path: body for path, body in split_file_diffs(unified_diff)}
+    collected = collected_test_files
 
     for old, new in file_pairs:
         if new is None and old is not None:
             # deletion — always reject test / config deletions here too
-            if is_test_path(old) or is_pytest_config_path(old):
+            if is_test_path(old, collected) or is_pytest_config_path(old):
                 result.errors.append(
                     f"Deleting test/config files is forbidden: {old}"
                 )
@@ -118,7 +130,7 @@ def check_test_integrity(
         if not existed:
             continue
 
-        if is_test_path(path) or _is_root_test_name(path):
+        if is_test_path(path, collected) or _is_root_test_name(path):
             if not allow_test_changes:
                 result.errors.append(
                     f"Modifying existing test file is forbidden "
@@ -144,8 +156,7 @@ def _is_root_test_name(path: str) -> bool:
     norm = path.replace("\\", "/")
     if "/" in norm:
         return False
-    name = Path(norm).name
-    return name.startswith("test_") and name.endswith(".py")
+    return is_pytest_test_module_name(Path(norm).name)
 
 
 def _check_new_file(
@@ -188,11 +199,11 @@ def _check_modified_existing_test(
     path: str,
     body: str,
 ) -> None:
-    from code_agent.patching.applier import _apply_hunks
+    from code_agent.patching.hunk_engine import apply_hunks_to_text
 
     original = (workspace_root / path).read_text(encoding="utf-8")
     try:
-        updated = _apply_hunks(original, body, path)
+        updated = apply_hunks_to_text(original, body, path)
     except Exception as exc:  # noqa: BLE001
         result.errors.append(f"Cannot analyze test patch for {path}: {exc}")
         return

@@ -1,0 +1,85 @@
+{
+  "summary_schema_version": 1,
+  "status": "SUCCEEDED",
+  "attempts_used": 1,
+  "changed_files": [
+    "mod.py"
+  ],
+  "baseline_tests_passed": false,
+  "final_tests_passed": true,
+  "request_verified": true,
+  "verification_basis": "baseline_failure_resolved",
+  "stop_reason": "all_tests_passed",
+  "consecutive_format_retries": 0,
+  "total_format_retries_used": 0,
+  "consecutive_patch_regeneration_retries": 0,
+  "total_patch_regeneration_retries": 0,
+  "patch_preflight_failures": 0,
+  "patch_preflight_successes": 1,
+  "patch_preflight_success_rate": 1.0,
+  "patch_apply_failures_after_preflight": 0,
+  "patch_apply_failures_without_preflight": 0,
+  "first_patch_applicable": true,
+  "analysis": {
+    "phase": "PROPOSE",
+    "evidence_requests_used": 1,
+    "max_evidence_requests": 2,
+    "parameter_corrections_used": 0,
+    "max_parameter_corrections": 1,
+    "consecutive_no_progress_actions": 0,
+    "total_no_progress_actions": 0,
+    "hard_policy_violations": 0
+  },
+  "read_budget": {
+    "used": 12,
+    "max": 12,
+    "remaining": 0,
+    "total_read_actions": 13,
+    "required_recovery_reads": 0,
+    "consecutive_violations": 0,
+    "total_violations": 0
+  },
+  "observability": {
+    "started_at": "<TS>",
+    "finished_at": "<TS>",
+    "duration_ms": 0,
+    "model": {
+      "provider": "dry_run",
+      "name": "gpt-4o-mini",
+      "tool_calling_protocol": "custom_json",
+      "temperature": 0.1,
+      "max_format_retries": 2,
+      "max_patch_regeneration_retries": 2,
+      "max_repair_attempts": 3,
+      "calls": 14,
+      "logical_calls": 14,
+      "transport_attempts": 14,
+      "usage": {
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "total_tokens": null,
+        "cached_tokens": null,
+        "source": "unavailable",
+        "available": false,
+        "complete": false,
+        "calls_with_usage": 0,
+        "calls_without_usage": 14
+      }
+    },
+    "tools": {
+      "total_calls": 14,
+      "read_calls": 13,
+      "proposal_calls": 1
+    },
+    "retries": {
+      "format": 0,
+      "patch_regeneration": 0,
+      "repair_attempts": 1
+    },
+    "tests": {
+      "total_runs": 2,
+      "baseline_runs": 1,
+      "post_apply_runs": 1
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "format": "safepatch_session_replay",
+  "version": 2,
+  "label": "current_working_tree_baseline",
+  "scenarios": [
+    "success",
+    "format_exhausted",
+    "evidence_then_patch",
+    "regen_exhausted",
+    "rejected",
+    "base_changed",
+    "cancelled",
+    "deadline_after_model",
+    "unsupported_pytest"
+  ],
+  "evidence_scope": "full_summary_trace_diff",
+  "notes": "Current-version baseline. It does not reconstruct missing historical trace payloads and does not prove pre-refactor payload equality. Historical v1 stored event names only."
+}

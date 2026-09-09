@@ -13,6 +13,7 @@ from code_agent.envfile import load_dotenv
 from code_agent.llm import LLMClient
 from code_agent.runtime.docker_pytest import DockerPytestRunner
 from code_agent.state import ApprovalBinding, SessionStatus
+from code_agent.tracing.sanitize import sanitize_text
 
 console = Console()
 
@@ -148,7 +149,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         session = controller.run(args.repo, description)
     except Exception as exc:  # noqa: BLE001 - CLI must not dump stacks for v1 UX
-        console.print(f"[red]ERROR[/red]: {exc}")
+        console.print(f"[red]ERROR[/red]: {sanitize_text(str(exc))}")
         return 1
 
     summary = session.to_summary()

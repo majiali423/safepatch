@@ -43,12 +43,12 @@ class VerificationPolicy:
 
     @staticmethod
     def passing_status(baseline: TestResult | None) -> tuple[SessionStatus, str, str]:
-        if baseline is not None and baseline.passed:
+        if baseline is None or baseline.passed or not baseline.has_valid_failure_oracle:
             return (
                 SessionStatus.TESTS_PASSED_UNVERIFIED,
                 "tests_passed_unverified",
                 "Tests passed, but the request is not independently verified because "
-                "the baseline was already green.",
+                "there was no valid failing baseline oracle.",
             )
         return (
             SessionStatus.SUCCEEDED,
@@ -70,6 +70,7 @@ class PatchExecutionService:
         self.allow_test_changes = allow_test_changes
         self.allow_new_tests = allow_new_tests
         self.apply_fn = apply_fn
+        self.collected_test_files: set[str] | None = None
 
     def apply(self, proposal: PatchProposal, workspace_root: Path) -> ApplyResult:
         return self.apply_fn(
@@ -77,4 +78,5 @@ class PatchExecutionService:
             workspace_root,
             allow_test_changes=self.allow_test_changes,
             allow_new_tests=self.allow_new_tests,
+            collected_test_files=self.collected_test_files,
         )

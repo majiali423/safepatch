@@ -1,0 +1,84 @@
+{
+  "summary_schema_version": 1,
+  "status": "MODEL_OUTPUT_INVALID",
+  "attempts_used": 0,
+  "changed_files": [],
+  "baseline_tests_passed": false,
+  "final_tests_passed": false,
+  "request_verified": false,
+  "verification_basis": null,
+  "stop_reason": "model_output_invalid",
+  "consecutive_format_retries": 2,
+  "total_format_retries_used": 2,
+  "consecutive_patch_regeneration_retries": 0,
+  "total_patch_regeneration_retries": 0,
+  "patch_preflight_failures": 0,
+  "patch_preflight_successes": 0,
+  "patch_preflight_success_rate": null,
+  "patch_apply_failures_after_preflight": 0,
+  "patch_apply_failures_without_preflight": 0,
+  "first_patch_applicable": null,
+  "analysis": {
+    "phase": "EXPLORE",
+    "evidence_requests_used": 0,
+    "max_evidence_requests": 2,
+    "parameter_corrections_used": 0,
+    "max_parameter_corrections": 1,
+    "consecutive_no_progress_actions": 0,
+    "total_no_progress_actions": 0,
+    "hard_policy_violations": 0
+  },
+  "read_budget": {
+    "used": 0,
+    "max": 12,
+    "remaining": 12,
+    "total_read_actions": 0,
+    "required_recovery_reads": 0,
+    "consecutive_violations": 0,
+    "total_violations": 0
+  },
+  "observability": {
+    "started_at": "<TS>",
+    "finished_at": "<TS>",
+    "duration_ms": 22,
+    "model": {
+      "provider": "dry_run",
+      "name": "gpt-4o-mini",
+      "tool_calling_protocol": "custom_json",
+      "temperature": 0.1,
+      "max_format_retries": 2,
+      "max_patch_regeneration_retries": 2,
+      "max_repair_attempts": 3,
+      "calls": 3,
+      "logical_calls": 3,
+      "transport_attempts": 3,
+      "usage": {
+        "prompt_tokens": null,
+        "completion_tokens": null,
+        "total_tokens": null,
+        "cached_tokens": null,
+        "source": "unavailable",
+        "available": false,
+        "complete": false,
+        "calls_with_usage": 0,
+        "calls_without_usage": 3
+      }
+    },
+    "tools": {
+      "total_calls": 0,
+      "read_calls": 0,
+      "proposal_calls": 0
+    },
+    "retries": {
+      "format": 2,
+      "patch_regeneration": 0,
+      "repair_attempts": 0
+    },
+    "tests": {
+      "total_runs": 1,
+      "baseline_runs": 1,
+      "post_apply_runs": 0
+    }
+  },
+  "error": "Model did not return a JSON object"
+}
