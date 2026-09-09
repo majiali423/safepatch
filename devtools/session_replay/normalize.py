@@ -41,7 +41,9 @@ def replace_known_paths(text: str, replacements: list[tuple[str, str]]) -> str:
 
 
 def normalize_string(text: str, *, key: str | None, replacements: list[tuple[str, str]]) -> str:
-    out = replace_known_paths(text, replacements)
+    # Trace payloads can embed source snippets and tool results. Normalize their
+    # line endings independently of the host so payload comparison is semantic.
+    out = replace_known_paths(text, replacements).replace("\r\n", "\n").replace("\r", "\n")
     if key in TIME_KEYS or ISO_TIMESTAMP.fullmatch(out):
         return "<TS>"
     if key in SESSION_ID_KEYS:
