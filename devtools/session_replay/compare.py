@@ -254,6 +254,12 @@ def _compare_v2_pair(base_dir: Path, after_dir: Path, *, name: str, errors: list
     after_trace = parse_trace((after_dir / "trace.jsonl").read_text(encoding="utf-8"))
     if base_trace != after_trace:
         _err(errors, f"{prefix}.trace.jsonl event payload or order differs")
+        if len(base_trace) != len(after_trace):
+            _err(errors, f"{prefix}.trace length: {len(base_trace)} != {len(after_trace)}")
+        for index, (before, after) in enumerate(zip(base_trace, after_trace)):
+            if before != after:
+                _err(errors, f"{prefix}.trace[{index}]: baseline={before!r}; after={after!r}")
+                break
     base_diff = (base_dir / "final.diff").read_text(encoding="utf-8")
     after_diff = (after_dir / "final.diff").read_text(encoding="utf-8")
     if base_diff != after_diff:

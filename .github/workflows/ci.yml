@@ -2,7 +2,13 @@ name: CI
 
 on:
   push:
+    branches: [master]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -11,6 +17,7 @@ jobs:
   unit:
     name: Unit (${{ matrix.os }}, Python ${{ matrix.python }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -34,10 +41,22 @@ jobs:
           python -m pytest -q -m "not docker_e2e and not packaging_network"
           -p no:cacheprovider
           --basetemp .test-artifacts
+      - name: Preserve failed replay captures
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: replay-${{ matrix.os }}-py${{ matrix.python }}
+          path: |
+            .test-artifacts/iso*/v2/
+            .test-artifacts/test_two_live_captures_are_equ*/
+          include-hidden-files: true
+          if-no-files-found: ignore
+          retention-days: 7
 
   quality:
     name: Product quality and wheel smoke
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
