@@ -24,6 +24,8 @@ claim the refactor-before and refactor-after payloads were identical.
 Normalization replaces timestamps, `session_id`, known capture/session paths,
 and duration fields. It does not globally rewrite hex strings, so patch hashes
 and literals such as `12345678` versus `87654321` in `final.diff` stay distinct.
+Synthetic repository inputs use explicit CRLF bytes to match the frozen Windows
+capture on Linux as well. File sizes and content hashes remain fully compared.
 
 On the success script the dry-run model returns a single `propose_patch`
 for `mod.py` (`return 1` → `return 2`). The in-process runner fails baseline

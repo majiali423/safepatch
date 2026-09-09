@@ -39,23 +39,27 @@ class FailThenPassRunner:
 
 
 def _mini_repo(base: Path, *, extra_other: bool = False, conftest: str | None = None) -> Path:
+    # The frozen v2 inputs were captured with CRLF on Windows. Keep their bytes
+    # identical on every host: size/revision/hash fields must remain comparable.
     repo = base / "repo"
     repo.mkdir()
-    (repo / "mod.py").write_text("def f():\n    return 1\n", encoding="utf-8")
+    (repo / "mod.py").write_text("def f():\n    return 1\n", encoding="utf-8", newline="\r\n")
     tests = repo / "tests"
     tests.mkdir()
     (tests / "test_mod.py").write_text(
         "from mod import f\ndef test_f():\n    assert f() == 2\n",
         encoding="utf-8",
+        newline="\r\n",
     )
-    (repo / "pytest.ini").write_text("[pytest]\npythonpath = .\n", encoding="utf-8")
+    (repo / "pytest.ini").write_text("[pytest]\npythonpath = .\n", encoding="utf-8", newline="\r\n")
     if extra_other:
         (repo / "other.py").write_text(
             "".join(f"value_{line} = {line}\n" for line in range(1, 501)),
             encoding="utf-8",
+            newline="\r\n",
         )
     if conftest is not None:
-        (repo / "conftest.py").write_text(conftest, encoding="utf-8")
+        (repo / "conftest.py").write_text(conftest, encoding="utf-8", newline="\r\n")
     return repo
 
 
@@ -213,7 +217,9 @@ def capture_to(
         def mutate_and_approve(*_a: object, **_k: object) -> bool:
             for mod in (t / "sessions").rglob("mod.py"):
                 if "working_copy" in mod.parts:
-                    mod.write_text("def f():\n    return 1\n# mutated\n", encoding="utf-8")
+                    mod.write_text(
+                        "def f():\n    return 1\n# mutated\n", encoding="utf-8", newline="\r\n"
+                    )
                     break
             return True
 
